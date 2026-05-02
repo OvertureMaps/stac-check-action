@@ -127,9 +127,24 @@ runs:
 
         stac-check $ARGS > $RUNNER_TEMP/stac-check-output.txt 2>&1
         EXIT_CODE=$?
-        echo "exit-code=$EXIT_CODE" >> $GITHUB_OUTPUT
-
         cat $RUNNER_TEMP/stac-check-output.txt
+
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "::error::stac-check exited with code $EXIT_CODE"
+          exit $EXIT_CODE
+        fi
+
+        if grep -q "Failed Schema" $RUNNER_TEMP/stac-check-output.txt 2>/dev/null; then
+          echo "::error::stac-check found validation failures"
+          exit 1
+        fi
+
+        if grep -q "Valid : False" $RUNNER_TEMP/stac-check-output.txt 2>/dev/null; then
+          echo "::error::stac-check reported invalid STAC"
+          exit 1
+        fi
+
+        echo "exit-code=0" >> $GITHUB_OUTPUT
 
     - name: Write to job summary
       if: ${{ inputs.job-summary == 'true' }}
@@ -148,8 +163,15 @@ runs:
         GH_TOKEN: ${{ github.token }}
 
     - name: Fail on issues
-      if: steps.run.outputs.exit-code != '0'
+      if: always()
       shell: bash
       run: |
-        echo "stac-check found validation issues (exit code: ${{ steps.run.outputs.exit-code }})"
-        exit ${{ steps.run.outputs.exit-code }}
+        EXIT_CODE=${{ steps.run.outputs.exit-code }}
+        if [ "$EXIT_CODE" != "0" ]; then
+          echo "stac-check exited with code: $EXIT_CODE"
+          exit $EXIT_CODE
+        fi
+        if grep -q "Failed Schema" $RUNNER_TEMP/stac-check-output.txt 2>/dev/null; then
+          echo "stac-check found validation failures"
+          exit 1
+        fi
