@@ -24,6 +24,7 @@ Asset validation (`validate-assets: true`) also only checks local file paths, us
 - [stac-check-action](#stac-check-action)
     - [Why local-only?](#why-local-only)
   - [Usage](#usage)
+    - [Pinning](#pinning)
   - [Inputs](#inputs)
   - [Outputs](#outputs)
   - [Example: PR Comment](#example-pr-comment)
@@ -32,8 +33,6 @@ Asset validation (`validate-assets: true`) also only checks local file paths, us
   - [Security](#security)
   - [Show Your Support](#show-your-support)
   - [Full Specification](#full-specification)
-  - [About](#about)
-  - [License](#license)
 
 ## Usage
 
@@ -159,13 +158,3 @@ Add a badge to your repository:
 ## Full Specification
 
 See [SPEC.md](./SPEC.md) for complete technical details.
-
-## About
-
-🎯 GitHub Action that runs stac-check for local STAC file validation, linting, and best practices compliance.
-
-[github.com/marketplace/actions/stac-check-action](https://github.com/marketplace/actions/stac-check-action)
-
-## License
-
-[MIT](./LICENSE)
