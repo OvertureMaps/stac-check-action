@@ -152,7 +152,8 @@ runs:
             printf '%s' "$IN_CONFIG" > "$CONFIG_PATH"
             export STAC_CHECK_CONFIG="$CONFIG_PATH"
           else
-            echo "::warning::config input is neither a readable file nor multiline YAML; ignoring"
+            echo "::error::config input is neither a readable file path nor multiline inline YAML"
+            exit 1
           fi
         fi
 

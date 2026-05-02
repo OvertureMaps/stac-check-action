@@ -61,29 +61,22 @@ Defined in `action.yml` (composite).
 - If empty: no action
 
 3. **Run stac-check and capture output**:
-   ```bash
-    stac-check [all-flags] ${{ inputs.file }} > $RUNNER_TEMP/stac-check-output.txt 2>&1
-    EXIT_CODE=$?
-    echo "exit-code=$EXIT_CODE" >> $GITHUB_OUTPUT
-    ```
+   - Inputs interpolated into `env:` block (no direct shell interpolation; mitigates injection).
+   - Args built as bash array, quoted on expansion.
+   - Output captured to `$RUNNER_TEMP/stac-check-output.txt`.
+   - Step output `exit-code` set to `stac-check` exit code (0 = valid).
 
 4. **Write to job summary** (if `job-summary` is true):
-    ```bash
-    echo "## stac-check Results" >> $GITHUB_STEP_SUMMARY
-    echo "" >> $GITHUB_STEP_SUMMARY
-    cat $RUNNER_TEMP/stac-check-output.txt >> $GITHUB_STEP_SUMMARY
-    ```
+   - Wraps "Validation Summary" section (or full output if absent) in fenced code block.
+   - Appended to `$GITHUB_STEP_SUMMARY`.
 
-5. **Post PR comment** (if `comment-pr` is true and event is pull_request):
-    Use GitHub CLI to post comment with output content.
+5. **Post PR comment** (if `comment-pr` is true and event is `pull_request`):
+   - Uses `gh pr comment` (GitHub CLI; pre-installed on runners) with `GH_TOKEN: ${{ github.token }}`.
+   - Same body format as job summary.
 
-6. **Fail on issues** (if exit code is non-zero):
-   ```bash
-   if [ $EXIT_CODE -ne 0 ]; then
-     echo "stac-check found validation issues (exit code: $EXIT_CODE)"
-     exit $EXIT_CODE
-   fi
-   ```
+6. **Fail on issues**:
+   - Exits with `stac-check` exit code if non-zero.
+   - Use `continue-on-error: true` in workflow to override.
 
 ### Permissions
 Minimal permissions by default. Additional permissions required only when `comment-pr: true`:
@@ -97,11 +90,12 @@ Action fails (sets step exit code) when `stac-check` returns non-zero exit code,
 
 ## Security Considerations
 - No external action dependencies to vet (composite action with runner-native tools only).
-- Users must specify exact `stac-check` versions (avoids mutable/latest pulls).
+- All user inputs passed via `env:` blocks and quoted shell variables (no direct `${{ }}` interpolation in `run:` bodies); mitigates shell-injection vectors.
+- Users must specify exact `stac-check` versions (avoids mutable/latest pulls); `latest` allowed but discouraged in production.
 - Minimal permissions by default; `pull-requests: write` only when `comment-pr: true`.
 - No secret handling or privilege escalation.
-- No network access required (local files only); `network: none` recommended in workflow.
-- Output captured from stdout/stderr only; no injection vectors in CLI argument construction.
+- No network access required for validation (local files only); `--no-assets-urls` enforced when `validate-assets: true`.
+- `extra-args` is word-split unquoted; users responsible for safe content (escape hatch for power users).
 
 ## Usage Example
 Basic validation with job summary (enabled by default):

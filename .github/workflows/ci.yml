@@ -5,15 +5,25 @@ on:
     branches: [main]
   pull_request:
 
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: Test Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ['3.10', '3.11', '3.12']
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -25,7 +35,7 @@ jobs:
 
       - name: Create test STAC item
         run: |
-          cat > /tmp/test-item.json << 'EOF'
+          cat > "${RUNNER_TEMP}/test-item.json" << 'EOF'
           {
             "type": "Feature",
             "stac_version": "1.0.0",
@@ -40,12 +50,17 @@ jobs:
           EOF
 
       - name: Run stac-check
-        run: stac-check /tmp/test-item.json
+        run: stac-check "${RUNNER_TEMP}/test-item.json"
 
   lint:
+    name: Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Validate action.yml
         run: |
@@ -58,15 +73,36 @@ jobs:
 
       - name: Check LF line endings
         run: |
-          ! grep -r $'\r' --include='*.yml' --include='*.md' . || (echo 'CRLF detected'; exit 1)
+          ! grep -rI --exclude-dir=.git $'\r' --include='*.yml' --include='*.yaml' --include='*.md' . || (echo 'CRLF detected'; exit 1)
+
+  lint-actions:
+    name: GitHub Actions audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run actionlint
+        uses: rhysd/actionlint@393031adb9afb225ee52ae2ccd7a5af5525e03e8 # v1.7.11
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@71321a20a9ded102f6e9ce5718a2fcec2c4f70d8 # v0.5.2
+        with:
+          advanced-security: false
 
   e2e:
     name: E2E Test with Overture STAC
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: stac-check-action
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -78,14 +114,14 @@ jobs:
 
       - name: Clone and setup overturemaps/stac
         run: |
-          git clone --depth 1 https://github.com/OvertureMaps/stac.git $RUNNER_TEMP/overture-stac
-          cd $RUNNER_TEMP/overture-stac
+          git clone --depth 1 https://github.com/OvertureMaps/stac.git "${RUNNER_TEMP}/overture-stac"
+          cd "${RUNNER_TEMP}/overture-stac"
           uv sync
 
       - name: Generate STAC catalog
         run: |
-          cd $RUNNER_TEMP/overture-stac
-          uv run gen-stac --output $RUNNER_TEMP/stac-catalog --debug
+          cd "${RUNNER_TEMP}/overture-stac"
+          uv run gen-stac --output "${RUNNER_TEMP}/stac-catalog" --debug
 
       - name: Run stac-check-action (self)
         uses: ./stac-check-action
@@ -93,25 +129,28 @@ jobs:
         id: e2e
         with:
           stac-check-version: 1.9.1
-          file: $RUNNER_TEMP/stac-catalog/catalog.json
+          file: ${{ runner.temp }}/stac-catalog/catalog.json
           recursive: true
           validate-assets: true
 
       - name: Verify stac-check detected failures
         shell: bash
+        env:
+          E2E_EXIT_CODE: ${{ steps.e2e.outputs.exit-code }}
         run: |
-          if [ "${{ steps.e2e.outputs.exit-code }}" = "0" ]; then
+          if [ "${E2E_EXIT_CODE}" = "0" ]; then
             echo "::error::E2E test should have failed (overture STAC is non-conforming)"
             exit 1
           fi
-          echo "E2E test correctly detected non-conforming STAC (exit code: ${{ steps.e2e.outputs.exit-code }})"
+          echo "E2E test correctly detected non-conforming STAC (exit code: ${E2E_EXIT_CODE})"
 
   unit-test:
     name: Unit Test
     runs-on: ubuntu-latest
-    needs: [test, lint, e2e]
+    permissions: {}
+    needs: [test, lint, lint-actions, e2e]
     if: always()
     steps:
-      - uses: lowlydba/are-we-good@v1.0.2
+      - uses: lowlydba/are-we-good@7efad05442f92a1203940ca8b79dd4fb930e75d4 # v1.0.2
         with:
           jobs: ${{ toJSON(needs) }}

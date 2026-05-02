@@ -83,7 +83,7 @@ jobs:
 | `verbose` | Show verbose error messages | `'true'` or `'false'` | `'false'` |
 | `fast` | Fast validation with FastJSONSchema, no geometry/linting | `'true'` or `'false'` | `'false'` |
 | `fast-linting` | Fast validation with linting, no geometry checks | `'true'` or `'false'` | `'false'` |
-| `output-file` | Save CLI output to file (separate from job summary) | `string` | — |
+| `output-file` | Save CLI output to file (requires `recursive: true`) | `string` | — |
 | `config` | Path to config file or inline YAML (sets `STAC_CHECK_CONFIG`) | `string` | — |
 | `job-summary` | Write results to GitHub job summary | `'true'` or `'false'` | `'true'` |
 | `comment-pr` | Post results as PR comment (requires `pull-requests: write`) | `'true'` or `'false'` | `'false'` |
@@ -94,6 +94,7 @@ jobs:
 | Name | Description |
 |------|-------------|
 | `exit-code` | Exit code from stac-check (0=valid, non-zero=issues) |
+| `output-file` | Path to file containing CLI output (if `output-file` input set) |
 
 ## Example: PR Comment
 
