@@ -2,14 +2,14 @@
 
 Thanks for considering a contribution.
 
-## Ground Rules
+## Ground rules
 
-- Read [SPEC.md](./SPEC.md) before proposing changes — design principles are intentional (composite-only, zero external action deps, local-only by default).
+- Read [SPEC.md](./SPEC.md) before proposing changes. Design constraints are intentional: composite only, zero external action deps, local-only by default.
 - Discuss substantial changes in an issue before opening a PR.
-- All PRs must pass CI (matrix tests, lint, zizmor, actionlint, BATS unit tests, e2e).
-- Follow existing code style (LF line endings, 2-space YAML indent).
+- All PRs must pass CI: matrix tests, lint, zizmor, actionlint, BATS unit tests, e2e.
+- Follow existing code style: LF line endings, 2-space YAML indent.
 
-## Local Setup
+## Local setup
 
 ```bash
 git clone https://github.com/lowlydba/stac-check-action.git
@@ -17,7 +17,7 @@ cd stac-check-action
 pip install stac-check==1.9.1   # or pin to whatever you're testing against
 ```
 
-## Testing Locally
+## Testing locally
 
 Validate `action.yml` parses:
 
@@ -49,7 +49,7 @@ Run actionlint:
 actionlint
 ```
 
-## Pull Request Checklist
+## Pull request checklist
 
 - [ ] Branch from `main`
 - [ ] One logical change per PR
@@ -59,7 +59,7 @@ actionlint
 - [ ] CI green (zizmor + actionlint + matrix tests + BATS + e2e)
 - [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/) format
 
-## Commit Message Format
+## Commit message format
 
 ```
 type(scope): short description
@@ -73,6 +73,6 @@ Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `perf`.
 
 Maintainers only. See [SPEC.md § Release Process](./SPEC.md#release-process).
 
-## Code of Conduct
+## Code of conduct
 
 This project adheres to the [Contributor Covenant](./CODE_OF_CONDUCT.md). By participating, you agree to its terms.
