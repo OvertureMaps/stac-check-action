@@ -162,8 +162,8 @@ jobs:
       - name: Run BATS tests
         run: npx bats tests/
 
-  unit-test:
-    name: Unit Test
+  rollup-tests:
+    name: Test Rollup
     runs-on: ubuntu-latest
     permissions: {}
     needs: [test, lint, lint-actions, e2e, bats]
