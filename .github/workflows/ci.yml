@@ -89,8 +89,19 @@ jobs:
 
       - name: Run stac-check-action (self)
         uses: ./stac-check-action
+        continue-on-error: true
+        id: e2e
         with:
           stac-check-version: v1.14.0
           file: $RUNNER_TEMP/stac-catalog/catalog.json
           recursive: true
           validate-assets: true
+
+      - name: Verify stac-check detected failures
+        shell: bash
+        run: |
+          if [ "${{ steps.e2e.outputs.exit-code }}" = "0" ]; then
+            echo "::error::E2E test should have failed (overture STAC is non-conforming)"
+            exit 1
+          fi
+          echo "E2E test correctly detected non-conforming STAC (exit code: ${{ steps.e2e.outputs.exit-code }})"
