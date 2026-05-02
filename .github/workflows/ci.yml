@@ -57,3 +57,38 @@ jobs:
       - name: Check LF line endings
         run: |
           ! grep -r $'\r' --include='*.yml' --include='*.md' . || (echo 'CRLF detected'; exit 1)
+
+  e2e:
+    name: E2E Test with Overture STAC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: stac-check-action
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Clone and setup overturemaps/stac
+        run: |
+          git clone --depth 1 https://github.com/OvertureMaps/stac.git $RUNNER_TEMP/overture-stac
+          cd $RUNNER_TEMP/overture-stac
+          uv sync
+
+      - name: Generate STAC catalog
+        run: |
+          cd $RUNNER_TEMP/overture-stac
+          uv run gen-stac --output $RUNNER_TEMP/stac-catalog --debug
+
+      - name: Run stac-check-action (self)
+        uses: ./stac-check-action
+        with:
+          stac-check-version: v1.14.0
+          file: $RUNNER_TEMP/stac-catalog/catalog.json
+          recursive: true
+          validate-assets: true
