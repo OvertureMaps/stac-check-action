@@ -107,7 +107,8 @@ runs:
         IN_OUTPUT_FILE: ${{ inputs.output-file }}
         IN_EXTRA_ARGS: ${{ inputs.extra-args }}
         IN_CONFIG: ${{ inputs.config }}
-      run: bash "${{ github.action_path }}/scripts/run.sh"
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/scripts/run.sh"
 
     - name: Write to job summary
       if: ${{ always() && inputs.job-summary == 'true' && steps.run.outputs.output-path != '' }}
