@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/lowlydba/stac-check-action/actions/workflows/ci.yml/badge.svg)](https://github.com/lowlydba/stac-check-action/actions/workflows/ci.yml) [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/lowlydba/stac-check-action/ci.yml)](https://github.com/lowlydba/stac-check-action/actions/workflows/ci.yml) [![immutable release ruleset](https://img.shields.io/badge/immutable%20tags-active-green?logo=github)](https://github.com/lowlydba/stac-check-action/rules) [![stac-check-action](https://img.shields.io/badge/stac--check--action-🎯-blue?style=flat)](https://github.com/lowlydba/stac-check-action)
 
-A lightweight composite GitHub Action that runs [`stac-check`](https://github.com/stac-utils/stac-check) against local STAC files to validate, lint, and check best practices for STAC items, collections, and catalogs.
+A lightweight composite GitHub Action that runs [`stac-check`](https://github.com/stac-utils/stac-check) against local STAC (SpatioTemporal Asset Catalog) files to validate, lint, and check best practices for STAC items, collections, and catalogs.
 
 - 🔒 action dependency-free (composite, no external actions)
 - ⚛️ small size (runner-native tools only)
@@ -45,9 +45,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: lowlydba/stac-check-action@a1b2c3d4e5f6789012345678901234567890abcd # v1.0.0
+      - uses: lowlydba/stac-check-action@v1.0.0
         with:
-          stac-check-version: v1.14.0
+          stac-check-version: 1.9.1
           file: ./stac/item.json
 ```
 
@@ -61,9 +61,9 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: lowlydba/stac-check-action@a1b2c3d4e5f6789012345678901234567890abcd # v1.0.0
+      - uses: lowlydba/stac-check-action@v1.0.0
         with:
-          stac-check-version: v1.14.0
+          stac-check-version: 1.9.1
           file: ./stac/collection.json
           fast-linting: true
           comment-pr: true
@@ -74,7 +74,7 @@ jobs:
 
 | Input | Description | Allowed Values | Default |
 |-------|-------------|----------------|---------|
-| `stac-check-version` **(required)** | Exact version (e.g. `v1.14.0`) or `latest` for newest release | `string` | — |
+| `stac-check-version` **(required)** | Exact version (e.g. `1.9.1`) or `latest` for newest release | `string` | — |
 | `file` **(required)** | Path to local STAC file to validate | `string` | — |
 | `recursive` | Recursively validate related local STAC objects | `'true'` or `'false'` | `'false'` |
 | `max-depth` | Maximum recursion depth (requires `recursive: true`) | `integer` | — |
@@ -98,9 +98,9 @@ jobs:
 ## Example: PR Comment
 
 ```yaml
-      - uses: lowlydba/stac-check-action@a1b2c3d4e5f6789012345678901234567890abcd # v1.0.0
+      - uses: lowlydba/stac-check-action@v1.0.0
         with:
-          stac-check-version: v1.14.0
+          stac-check-version: 1.9.1
           file: ./stac/collection.json
           fast-linting: true
           comment-pr: true
@@ -110,9 +110,9 @@ jobs:
 ## Example: Inline Config
 
 ```yaml
-      - uses: lowlydba/stac-check-action@a1b2c3d4e5f6789012345678901234567890abcd # v1.0.0
+      - uses: lowlydba/stac-check-action@v1.0.0
         with:
-          stac-check-version: v1.14.0
+          stac-check-version: 1.9.1
           file: ./item.json
           config: |
             linting:

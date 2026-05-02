@@ -15,23 +15,17 @@ Defined in `action.yml` (composite).
 ### Inputs
 | Name | Required | Default | Description |
 |------|----------|---------|-------------|
-| `stac-check-version` | Yes | None | Exact `stac-check` PyPI version (e.g., `v1.14.0`) or `latest` for newest release |
+| `stac-check-version` | Yes | None | `stac-check` PyPI version (e.g., `1.9.1` or `v1.9.1`; leading `v` stripped) or `latest` |
 | `file` | Yes | None | Path to local STAC file to validate |
 | `recursive` | No | `false` | Recursively validate related local STAC objects (`--recursive`) |
 | `max-depth` | No | `""` | Maximum recursion depth (`--max-depth`); ignored if `recursive` is false |
-| `validate-assets` | No | `false` | Validate assets locally (no network requests) |
+| `validate-assets` | No | `false` | Validate assets locally (`--assets --no-assets-urls`) |
 | `pydantic` | No | `false` | Use stac-pydantic for enhanced validation (`--pydantic`) |
 | `verbose` | No | `false` | Show verbose error messages (`--verbose`) |
 | `fast` | No | `false` | Fast validation with FastJSONSchema, no geometry/linting (`--fast`) |
 | `fast-linting` | No | `false` | Fast validation with linting, no geometry checks (`--fast-linting`) |
-| `output-file` | No | `""` | Save CLI output to file (`--output`); separate from job summary |
-| `extra-args` | No | `""` | Additional `stac-check` CLI arguments (appended last) |
-| `job-summary` | No | `true` | Write validation results to GitHub job summary |
-| `comment-pr` | No | `false` | Post validation summary as PR comment (requires `pull-requests: write`) |
-| `verbose` | No | `false` | Show verbose error messages (`--verbose`) |
-| `fast` | No | `false` | Fast validation with FastJSONSchema, no geometry/linting (`--fast`) |
-| `fast-linting` | No | `false` | Fast validation with linting, no geometry checks (`--fast-linting`) |
-| `output-file` | No | `""` | Save CLI output to file (`--output`); separate from job summary |
+| `output-file` | No | `""` | Save CLI output to file (`--output`); requires `recursive: true` |
+| `config` | No | `""` | Path to config file or inline YAML (sets `STAC_CHECK_CONFIG`) |
 | `extra-args` | No | `""` | Additional `stac-check` CLI arguments (appended last) |
 | `job-summary` | No | `true` | Write validation results to GitHub job summary |
 | `comment-pr` | No | `false` | Post validation summary as PR comment (requires `pull-requests: write`) |
@@ -44,10 +38,9 @@ Defined in `action.yml` (composite).
 
 ### Steps
 1. **Install stac-check**:
-   ```bash
-   pip install stac-check==${{ inputs.stac-check-version }}
-   ```
-   Fails immediately if Python/pip are unavailable (no installation attempted).
+   - If `stac-check-version` is `latest`: `pip install stac-check`
+   - Else: strip leading `v` if present, then `pip install stac-check==<version>`
+   - Fails immediately if Python/pip are unavailable.
 
 2. **Build CLI arguments**:
    Construct the `stac-check` command with all enabled flags. Arguments are added in this order:
@@ -120,9 +113,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: your-org/stac-check-action@v1.0.0  # SHA-pinned tag
+      - uses: lowlydba/stac-check-action@v1.0.0
         with:
-          stac-check-version: v1.14.0
+          stac-check-version: 1.9.1
           file: ./stac/item.json
 ```
 
@@ -140,9 +133,9 @@ jobs:
       pull-requests: write  # Required for comment-pr
     steps:
       - uses: actions/checkout@v4
-      - uses: your-org/stac-check-action@v1.0.0
+      - uses: lowlydba/stac-check-action@v1.0.0
         with:
-          stac-check-version: v1.14.0
+          stac-check-version: 1.9.1
           file: ./stac/collection.json
           fast-linting: true
           comment-pr: true
@@ -158,9 +151,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: your-org/stac-check-action@v1.0.0
+      - uses: lowlydba/stac-check-action@v1.0.0
         with:
-          stac-check-version: v1.14.0
+          stac-check-version: 1.9.1
           file: ./catalog.json
           recursive: true
           max-depth: 3

@@ -7,7 +7,7 @@ branding:
 
 inputs:
   stac-check-version:
-    description: 'Exact stac-check PyPI version (e.g., v1.14.0) or "latest"'
+    description: 'stac-check PyPI version (e.g., 1.9.1 or v1.9.1; leading "v" stripped) or "latest"'
     required: true
   file:
     description: 'Path to local STAC file to validate'
@@ -41,7 +41,7 @@ inputs:
     required: false
     default: 'false'
   output-file:
-    description: 'Save CLI output to file (separate from job summary)'
+    description: 'Save CLI output to file (requires recursive: true per stac-check CLI)'
     required: false
     default: ''
   job-summary:
@@ -65,125 +65,157 @@ outputs:
   exit-code:
     description: 'Exit code from stac-check (0=valid, non-zero=issues)'
     value: ${{ steps.run.outputs.exit-code }}
+  output-file:
+    description: 'Path to file containing CLI output (if output-file input was set)'
+    value: ${{ steps.run.outputs.output-file }}
 
 runs:
   using: 'composite'
   steps:
     - name: Install stac-check
       shell: bash
+      env:
+        VERSION: ${{ inputs.stac-check-version }}
       run: |
-        if [ "${{ inputs.stac-check-version }}" = "latest" ]; then
-          pip install stac-check
+        set -euo pipefail
+        if [ "$VERSION" = "latest" ]; then
+          pip install --quiet stac-check
         else
-          pip install stac-check==${{ inputs.stac-check-version }}
+          # Strip leading 'v' if present (PyPI versions don't use v-prefix)
+          VERSION="${VERSION#v}"
+          pip install --quiet "stac-check==${VERSION}"
         fi
 
-    - name: Build CLI arguments and run stac-check
+    - name: Run stac-check
       id: run
       shell: bash
+      env:
+        IN_FILE: ${{ inputs.file }}
+        IN_RECURSIVE: ${{ inputs.recursive }}
+        IN_MAX_DEPTH: ${{ inputs.max-depth }}
+        IN_VALIDATE_ASSETS: ${{ inputs.validate-assets }}
+        IN_PYDANTIC: ${{ inputs.pydantic }}
+        IN_VERBOSE: ${{ inputs.verbose }}
+        IN_FAST: ${{ inputs.fast }}
+        IN_FAST_LINTING: ${{ inputs.fast-linting }}
+        IN_OUTPUT_FILE: ${{ inputs.output-file }}
+        IN_EXTRA_ARGS: ${{ inputs.extra-args }}
+        IN_CONFIG: ${{ inputs.config }}
       run: |
-        ARGS=""
+        set -uo pipefail
+        ARGS=()
 
-        if [ "${{ inputs.recursive }}" = "true" ]; then
-          ARGS="$ARGS --recursive"
-          if [ -n "${{ inputs.max-depth }}" ]; then
-            ARGS="$ARGS --max-depth ${{ inputs.max-depth }}"
+        if [ "$IN_RECURSIVE" = "true" ]; then
+          ARGS+=(--recursive)
+          if [ -n "$IN_MAX_DEPTH" ]; then
+            ARGS+=(--max-depth "$IN_MAX_DEPTH")
           fi
         fi
 
-        if [ "${{ inputs.validate-assets }}" = "true" ]; then
-          ARGS="$ARGS --assets --no-assets-urls"
+        if [ "$IN_VALIDATE_ASSETS" = "true" ]; then
+          ARGS+=(--assets --no-assets-urls)
         fi
 
-        if [ "${{ inputs.pydantic }}" = "true" ]; then
-          ARGS="$ARGS --pydantic"
+        [ "$IN_PYDANTIC" = "true" ] && ARGS+=(--pydantic)
+        [ "$IN_VERBOSE" = "true" ] && ARGS+=(--verbose)
+
+        if [ "$IN_FAST" = "true" ]; then
+          ARGS+=(--fast)
+        elif [ "$IN_FAST_LINTING" = "true" ]; then
+          ARGS+=(--fast-linting)
         fi
 
-        if [ "${{ inputs.verbose }}" = "true" ]; then
-          ARGS="$ARGS --verbose"
+        if [ -n "$IN_OUTPUT_FILE" ]; then
+          if [ "$IN_RECURSIVE" != "true" ]; then
+            echo "::error::output-file requires recursive: true (stac-check CLI limitation)"
+            exit 1
+          fi
+          ARGS+=(--output "$IN_OUTPUT_FILE")
+          echo "output-file=$IN_OUTPUT_FILE" >> "$GITHUB_OUTPUT"
         fi
 
-        if [ "${{ inputs.fast }}" = "true" ]; then
-          ARGS="$ARGS --fast"
-        elif [ "${{ inputs.fast-linting }}" = "true" ]; then
-          ARGS="$ARGS --fast-linting"
+        # Append extra-args (word-split intentionally for CLI flags)
+        if [ -n "$IN_EXTRA_ARGS" ]; then
+          # shellcheck disable=SC2206
+          EXTRA=($IN_EXTRA_ARGS)
+          ARGS+=("${EXTRA[@]}")
         fi
 
-        if [ -n "${{ inputs.output-file }}" ]; then
-          ARGS="$ARGS --output ${{ inputs.output-file }}"
-        fi
+        ARGS+=("$IN_FILE")
 
-        ARGS="$ARGS ${{ inputs.extra-args }}"
-        ARGS="$ARGS ${{ inputs.file }}"
-
-        # Handle config input
-        if [ -n "${{ inputs.config }}" ]; then
-          if [ -f "${{ inputs.config }}" ]; then
-            export STAC_CHECK_CONFIG="${{ inputs.config }}"
-          elif echo "${{ inputs.config }}" | grep -q $'\n'; then
-            echo "${{ inputs.config }}" > $RUNNER_TEMP/stac-check-config.yml
-            export STAC_CHECK_CONFIG="$RUNNER_TEMP/stac-check-config.yml"
+        # Handle config: file path OR inline YAML (multiline)
+        if [ -n "$IN_CONFIG" ]; then
+          if [ -f "$IN_CONFIG" ]; then
+            export STAC_CHECK_CONFIG="$IN_CONFIG"
+          elif [[ "$IN_CONFIG" == *$'\n'* ]]; then
+            CONFIG_PATH="$RUNNER_TEMP/stac-check-config.yml"
+            printf '%s' "$IN_CONFIG" > "$CONFIG_PATH"
+            export STAC_CHECK_CONFIG="$CONFIG_PATH"
           else
-            echo "::warning::config input is neither a file nor valid inline YAML"
+            echo "::warning::config input is neither a readable file nor multiline YAML; ignoring"
           fi
         fi
 
-        stac-check $ARGS > $RUNNER_TEMP/stac-check-output.txt 2>&1
+        OUTPUT_PATH="$RUNNER_TEMP/stac-check-output.txt"
+        echo "output-path=$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
+
+        set +e
+        stac-check "${ARGS[@]}" > "$OUTPUT_PATH" 2>&1
         EXIT_CODE=$?
-        cat $RUNNER_TEMP/stac-check-output.txt
+        set -e
 
-        if [ $EXIT_CODE -ne 0 ]; then
-          echo "::error::stac-check exited with code $EXIT_CODE"
-          exit $EXIT_CODE
-        fi
-
-        if grep -q "Failed Schema" $RUNNER_TEMP/stac-check-output.txt 2>/dev/null; then
-          echo "::error::stac-check found validation failures"
-          exit 1
-        fi
-
-        if grep -q "Valid : False" $RUNNER_TEMP/stac-check-output.txt 2>/dev/null; then
-          echo "::error::stac-check reported invalid STAC"
-          exit 1
-        fi
-
-        echo "exit-code=0" >> $GITHUB_OUTPUT
+        cat "$OUTPUT_PATH"
+        echo "exit-code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
 
     - name: Write to job summary
-      if: ${{ always() && inputs.job-summary == 'true' }}
+      if: ${{ always() && inputs.job-summary == 'true' && steps.run.outputs.output-path != '' }}
       shell: bash
+      env:
+        OUTPUT_PATH: ${{ steps.run.outputs.output-path }}
       run: |
-        echo "## stac-check Results" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        if grep -q "Validation Summary" $RUNNER_TEMP/stac-check-output.txt 2>/dev/null; then
-          sed -n '/Validation Summary/,$p' $RUNNER_TEMP/stac-check-output.txt >> $GITHUB_STEP_SUMMARY
-        else
-          cat $RUNNER_TEMP/stac-check-output.txt >> $GITHUB_STEP_SUMMARY
-        fi
+        set -euo pipefail
+        {
+          echo "## stac-check Results"
+          echo ""
+          echo '```'
+          if grep -q "Validation Summary" "$OUTPUT_PATH" 2>/dev/null; then
+            sed -n '/Validation Summary/,$p' "$OUTPUT_PATH"
+          else
+            cat "$OUTPUT_PATH"
+          fi
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Post PR comment
-      if: ${{ always() && inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
+      if: ${{ always() && inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.run.outputs.output-path != '' }}
       shell: bash
-      run: |
-        if grep -q "Validation Summary" $RUNNER_TEMP/stac-check-output.txt 2>/dev/null; then
-          sed -n '/Validation Summary/,$p' $RUNNER_TEMP/stac-check-output.txt > $RUNNER_TEMP/stac-check-summary.txt
-          gh pr comment ${{ github.event.number }} --body-file $RUNNER_TEMP/stac-check-summary.txt
-        else
-          gh pr comment ${{ github.event.number }} --body-file $RUNNER_TEMP/stac-check-output.txt
-        fi
       env:
         GH_TOKEN: ${{ github.token }}
+        OUTPUT_PATH: ${{ steps.run.outputs.output-path }}
+        PR_NUMBER: ${{ github.event.number }}
+      run: |
+        set -euo pipefail
+        BODY_PATH="$RUNNER_TEMP/stac-check-comment.md"
+        {
+          echo "## stac-check Results"
+          echo ""
+          echo '```'
+          if grep -q "Validation Summary" "$OUTPUT_PATH" 2>/dev/null; then
+            sed -n '/Validation Summary/,$p' "$OUTPUT_PATH"
+          else
+            cat "$OUTPUT_PATH"
+          fi
+          echo '```'
+        } > "$BODY_PATH"
+        gh pr comment "$PR_NUMBER" --body-file "$BODY_PATH"
 
     - name: Fail on issues
       if: always()
       shell: bash
+      env:
+        EXIT_CODE: ${{ steps.run.outputs.exit-code }}
       run: |
-        EXIT_CODE=${{ steps.run.outputs.exit-code }}
-        if [ "$EXIT_CODE" != "0" ]; then
-          echo "stac-check exited with code: $EXIT_CODE"
-          exit $EXIT_CODE
-        fi
-        if grep -q "Failed Schema" $RUNNER_TEMP/stac-check-output.txt 2>/dev/null; then
-          echo "stac-check found validation failures"
-          exit 1
+        if [ "${EXIT_CODE:-1}" != "0" ]; then
+          echo "::error::stac-check exited with code: ${EXIT_CODE:-1}"
+          exit "${EXIT_CODE:-1}"
         fi
