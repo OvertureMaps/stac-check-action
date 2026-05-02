@@ -42,7 +42,6 @@ if [ -n "${IN_OUTPUT_FILE:-}" ]; then
     exit 1
   fi
   ARGS+=(--output "$IN_OUTPUT_FILE")
-  echo "output-file=$IN_OUTPUT_FILE" >> "$GITHUB_OUTPUT"
 fi
 
 # Append extra-args (word-split intentionally for CLI flags)
@@ -66,7 +65,7 @@ if [ -n "${IN_CONFIG:-}" ]; then
 fi
 
 OUTPUT_PATH="$(mktemp "$RUNNER_TEMP/stac-check-output.XXXXXX.txt")"
-echo "output-path=$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
+echo "log-path=$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
 
 set +e
 stac-check "${ARGS[@]}" > "$OUTPUT_PATH" 2>&1

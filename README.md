@@ -104,8 +104,7 @@ jobs:
 | Name | Description |
 |------|-------------|
 | `exit-code` | Exit code from stac-check (0=valid, non-zero=issues) |
-| `output-file` | Path to file containing CLI output (if `output-file` input set) |
-| `output-path` | Path to captured stac-check stdout/stderr (always set) |
+| `log-path` | Path to captured stac-check stdout/stderr (always set; unique per invocation) |
 | `valid` | `true` if stac-check output contained no failure markers, else `false` |
 
 ## Example: PR Comment

@@ -59,10 +59,10 @@ teardown() {
   grep -q "exit-code=2" "$GITHUB_OUTPUT"
 }
 
-@test "output-path is always written to GITHUB_OUTPUT" {
+@test "log-path is always written to GITHUB_OUTPUT" {
   run bash "$SCRIPT"
   [ "$status" -eq 0 ]
-  grep -q "output-path=" "$GITHUB_OUTPUT"
+  grep -q "log-path=" "$GITHUB_OUTPUT"
 }
 
 # ---------------------------------------------------------------------------
@@ -175,14 +175,13 @@ teardown() {
   [[ "$output" == *"output-file requires recursive: true"* ]]
 }
 
-@test "output-file with recursive:true — --output passed and output-file in GITHUB_OUTPUT" {
+@test "output-file with recursive:true — --output passed" {
   export IN_OUTPUT_FILE="$TEST_TEMP/out.txt"
   export IN_RECURSIVE="true"
   run bash "$SCRIPT"
   [ "$status" -eq 0 ]
   grep -qx -- "--output"        "$MOCK_ARGS_FILE"
   grep -qx -- "$IN_OUTPUT_FILE" "$MOCK_ARGS_FILE"
-  grep -q "output-file=$IN_OUTPUT_FILE" "$GITHUB_OUTPUT"
 }
 
 # ---------------------------------------------------------------------------

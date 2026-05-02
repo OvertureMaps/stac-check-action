@@ -65,12 +65,9 @@ outputs:
   exit-code:
     description: 'Exit code from stac-check (0=valid, non-zero=issues)'
     value: ${{ steps.run.outputs.exit-code }}
-  output-file:
-    description: 'Path to file containing CLI output (if output-file input was set)'
-    value: ${{ steps.run.outputs.output-file }}
-  output-path:
-    description: 'Path to captured stac-check stdout/stderr (always set)'
-    value: ${{ steps.run.outputs.output-path }}
+  log-path:
+    description: 'Path to captured stac-check stdout/stderr (always set; unique per invocation)'
+    value: ${{ steps.run.outputs.log-path }}
   valid:
     description: 'true if stac-check output contained no failure markers'
     value: ${{ steps.run.outputs.valid }}
@@ -111,10 +108,10 @@ runs:
       run: bash "$ACTION_PATH/scripts/run.sh"
 
     - name: Write to job summary
-      if: ${{ always() && inputs.job-summary == 'true' && steps.run.outputs.output-path != '' }}
+      if: ${{ always() && inputs.job-summary == 'true' && steps.run.outputs.log-path != '' }}
       shell: bash
       env:
-        OUTPUT_PATH: ${{ steps.run.outputs.output-path }}
+        OUTPUT_PATH: ${{ steps.run.outputs.log-path }}
       run: |
         set -euo pipefail
         {
@@ -130,11 +127,11 @@ runs:
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Post PR comment
-      if: ${{ always() && inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.run.outputs.output-path != '' }}
+      if: ${{ always() && inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.run.outputs.log-path != '' }}
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        OUTPUT_PATH: ${{ steps.run.outputs.output-path }}
+        OUTPUT_PATH: ${{ steps.run.outputs.log-path }}
         PR_NUMBER: ${{ github.event.number }}
         REPO: ${{ github.repository }}
       run: |

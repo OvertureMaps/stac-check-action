@@ -34,7 +34,8 @@ Defined in `action.yml` (composite).
 | Name | Description |
 |------|-------------|
 | `exit-code` | Exit code of `stac-check` command (0=valid, non-zero=issues found) |
-| `output-file` | Path to file containing CLI output (if `output-file` input set) |
+| `log-path` | Path to captured `stac-check` stdout/stderr (always set; unique per invocation) |
+| `valid` | `true` if output contained no failure markers, else `false` |
 
 ### Steps
 1. **Install stac-check**:
@@ -56,15 +57,16 @@ Defined in `action.yml` (composite).
    - `file` (positional, always last)
 
 **Config handling:**
-- If `config` input is valid filepath: set `STAC_CHECK_CONFIG=/path/to/file`
-- If `config` input contains newlines (inline YAML): write to `$RUNNER_TEMP/stac-check-config.yml`, set `STAC_CHECK_CONFIG=$RUNNER_TEMP/stac-check-config.yml`
+- If `config` input is a valid filepath: set `STAC_CHECK_CONFIG=/path/to/file`
+- Otherwise (treated as inline YAML, single- or multi-line): write to a unique file under `$RUNNER_TEMP`, set `STAC_CHECK_CONFIG` to that path
 - If empty: no action
 
 3. **Run stac-check and capture output**:
    - Inputs interpolated into `env:` block (no direct shell interpolation; mitigates injection).
    - Args built as bash array, quoted on expansion.
-   - Output captured to `$RUNNER_TEMP/stac-check-output.txt`.
+   - Output captured to a unique file under `$RUNNER_TEMP` (path exposed via `log-path` output).
    - Step output `exit-code` set to `stac-check` exit code (0 = valid).
+   - Step output `valid` set to `false` if output contains failure markers (recursive mode often returns exit 0 even on failures).
 
 4. **Write to job summary** (if `job-summary` is true):
    - Wraps "Validation Summary" section (or full output if absent) in fenced code block.

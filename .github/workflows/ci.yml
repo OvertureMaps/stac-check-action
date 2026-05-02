@@ -138,7 +138,7 @@ jobs:
         shell: bash
         env:
           E2E_VALID: ${{ steps.e2e.outputs.valid }}
-          E2E_OUTPUT_PATH: ${{ steps.e2e.outputs.output-path }}
+          E2E_OUTPUT_PATH: ${{ steps.e2e.outputs.log-path }}
         run: |
           set -uo pipefail
           if [ "${E2E_VALID}" != "false" ]; then
@@ -161,7 +161,7 @@ jobs:
           persist-credentials: false
 
       - name: Run BATS tests
-        run: npx bats tests/
+        run: npx -y bats@1.13.0 tests/
 
   rollup-tests:
     name: Test Rollup
