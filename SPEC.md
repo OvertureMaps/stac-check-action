@@ -5,7 +5,7 @@ Unofficial composite GitHub Action to run `stac-check` (from [stac-utils/stac-ch
 
 ## Design Principles
 - **Composite Action**: No container/JavaScript overhead, direct runner command execution.
-- **Immutable Releases**: Action versions pinned to SHA tags; `stac-check` version user-specified (no `latest`).
+- **Immutable Releases**: Action versions pinned to SHA tags; `stac-check` version user-specified (supply chain control). Use `latest` only for non-critical workflows.
 - **Low Dependencies**: Zero external GitHub Actions; only runner-native tools (Python, pip, shell).
 - **Tight Security**: No third-party deps, minimal permissions, user-controlled supply chain.
 
@@ -15,7 +15,7 @@ Defined in `action.yml` (composite).
 ### Inputs
 | Name | Required | Default | Description |
 |------|----------|---------|-------------|
-| `stac-check-version` | Yes | None | Exact `stac-check` PyPI version (e.g., `v1.14.0`) |
+| `stac-check-version` | Yes | None | Exact `stac-check` PyPI version (e.g., `v1.14.0`) or `latest` for newest release |
 | `file` | Yes | None | Path to local STAC file to validate |
 | `recursive` | No | `false` | Recursively validate related local STAC objects (`--recursive`) |
 | `max-depth` | No | `""` | Maximum recursion depth (`--max-depth`); ignored if `recursive` is false |

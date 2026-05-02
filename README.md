@@ -32,7 +32,7 @@ jobs:
 
 | Name | Required | Default | Description |
 |------|----------|---------|-------------|
-| `stac-check-version` | Yes | - | Exact `stac-check` PyPI version (e.g., `v1.14.0`) |
+| `stac-check-version` | Yes | - | Exact version (e.g., `v1.14.0`) or `latest` for newest release |
 | `file` | Yes | - | Path to local STAC file to validate |
 | `recursive` | No | `false` | Recursively validate related local STAC objects |
 | `max-depth` | No | `""` | Maximum recursion depth (requires `recursive: true`) |
@@ -102,7 +102,7 @@ jobs:
 - No external action dependencies
 - Minimal permissions (only `pull-requests: write` if using `comment-pr`)
 - No network access required (local files only)
-- Users specify exact versions (no mutable `latest` tags)
+- Users specify exact versions (use `latest` only for non-critical workflows)
 
 ## Full Specification
 

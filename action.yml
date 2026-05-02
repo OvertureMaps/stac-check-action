@@ -4,7 +4,7 @@ author: 'your-org'
 
 inputs:
   stac-check-version:
-    description: 'Exact stac-check PyPI version (e.g., v1.14.0)'
+    description: 'Exact stac-check PyPI version (e.g., v1.14.0) or "latest"'
     required: true
   file:
     description: 'Path to local STAC file to validate'
@@ -68,7 +68,12 @@ runs:
   steps:
     - name: Install stac-check
       shell: bash
-      run: pip install stac-check==${{ inputs.stac-check-version }}
+      run: |
+        if [ "${{ inputs.stac-check-version }}" = "latest" ]; then
+          pip install stac-check
+        else
+          pip install stac-check==${{ inputs.stac-check-version }}
+        fi
 
     - name: Build CLI arguments and run stac-check
       id: run
