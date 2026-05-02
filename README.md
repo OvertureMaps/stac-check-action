@@ -51,6 +51,16 @@ jobs:
           file: ./stac/item.json
 ```
 
+### Pinning
+
+For supply-chain-sensitive workflows, pin to a commit SHA instead of a tag:
+
+```yaml
+- uses: lowlydba/stac-check-action@<full-commit-sha> # v1.0.0
+```
+
+Tags are immutable per this repo's [release ruleset](https://github.com/lowlydba/stac-check-action/rules), but SHA pinning gives the strongest guarantee against upstream tampering. [Dependabot](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/keeping-your-actions-up-to-date-with-dependabot) keeps SHA-pinned actions current automatically.
+
 For PR comments with fast validation:
 
 ```yaml
@@ -95,6 +105,8 @@ jobs:
 |------|-------------|
 | `exit-code` | Exit code from stac-check (0=valid, non-zero=issues) |
 | `output-file` | Path to file containing CLI output (if `output-file` input set) |
+| `output-path` | Path to captured stac-check stdout/stderr (always set) |
+| `valid` | `true` if stac-check output contained no failure markers, else `false` |
 
 ## Example: PR Comment
 
