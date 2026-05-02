@@ -9,7 +9,7 @@
 #
 # GitHub Actions env vars (defaulted for local/test use):
 #   GITHUB_OUTPUT, RUNNER_TEMP
-set -uo pipefail
+set -euo pipefail
 
 : "${GITHUB_OUTPUT:=/dev/null}"
 : "${RUNNER_TEMP:=$(mktemp -d)}"
@@ -54,21 +54,18 @@ fi
 
 ARGS+=("${IN_FILE:?IN_FILE is required}")
 
-# Handle config: file path OR inline YAML (multiline)
+# Handle config: file path OR inline YAML
 if [ -n "${IN_CONFIG:-}" ]; then
   if [ -f "$IN_CONFIG" ]; then
     export STAC_CHECK_CONFIG="$IN_CONFIG"
-  elif [[ "$IN_CONFIG" == *$'\n'* ]]; then
-    CONFIG_PATH="$RUNNER_TEMP/stac-check-config.yml"
+  else
+    CONFIG_PATH="$(mktemp "$RUNNER_TEMP/stac-check-config.XXXXXX.yml")"
     printf '%s' "$IN_CONFIG" > "$CONFIG_PATH"
     export STAC_CHECK_CONFIG="$CONFIG_PATH"
-  else
-    echo "::error::config input is neither a readable file path nor multiline inline YAML"
-    exit 1
   fi
 fi
 
-OUTPUT_PATH="$RUNNER_TEMP/stac-check-output.txt"
+OUTPUT_PATH="$(mktemp "$RUNNER_TEMP/stac-check-output.XXXXXX.txt")"
 echo "output-path=$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
 
 set +e

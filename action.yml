@@ -154,13 +154,14 @@ runs:
           echo '```'
         } > "$BODY_PATH"
 
-        # Find existing comment with marker
-        COMMENT_ID=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+        # Find existing comment with marker (paginate to handle busy PRs)
+        COMMENT_ID=$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" \
           --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -n1)
 
         if [ -n "$COMMENT_ID" ]; then
+          # Stream body via stdin to avoid ARG_MAX limits on large outputs
           gh api --method PATCH "repos/${REPO}/issues/comments/${COMMENT_ID}" \
-            --field body="$(cat "$BODY_PATH")"
+            --field "body=@${BODY_PATH}"
         else
           gh pr comment "$PR_NUMBER" --body-file "$BODY_PATH"
         fi

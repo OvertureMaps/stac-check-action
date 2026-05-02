@@ -208,11 +208,14 @@ teardown() {
   grep -q "check_geometry" "$CONFIG_PATH"
 }
 
-@test "config invalid (non-file, single-line) — exits 1 with error message" {
-  export IN_CONFIG="not-a-file-and-not-multiline"
+@test "config as single-line inline YAML — temp file written, STAC_CHECK_CONFIG set" {
+  export IN_CONFIG="{linting: {check_geometry: false}}"
   run bash "$SCRIPT"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"neither a readable file path nor multiline inline YAML"* ]]
+  [ "$status" -eq 0 ]
+  grep -q "STAC_CHECK_CONFIG=" "$MOCK_ENV_FILE"
+  CONFIG_PATH="$(grep "STAC_CHECK_CONFIG=" "$MOCK_ENV_FILE" | cut -d= -f2)"
+  [ -f "$CONFIG_PATH" ]
+  grep -q "check_geometry" "$CONFIG_PATH"
 }
 
 # ---------------------------------------------------------------------------
