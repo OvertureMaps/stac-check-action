@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Mock stac-check binary for unit tests.
+#
+# Env vars:
+#   MOCK_EXIT_CODE  — exit code to return (default: 0)
+#   MOCK_ARGS_FILE  — if set, write one arg per line to this file
+#   MOCK_ENV_FILE   — if set, write environment to this file (for config assertions)
+#   MOCK_STDOUT     — if set, written verbatim to stdout (for parser tests)
+
+[ -n "${MOCK_ARGS_FILE:-}" ] && printf '%s\n' "$@" > "$MOCK_ARGS_FILE"
+[ -n "${MOCK_ENV_FILE:-}"  ] && printenv        > "$MOCK_ENV_FILE"
+[ -n "${MOCK_STDOUT:-}"    ] && printf '%s\n' "$MOCK_STDOUT"
+
+exit "${MOCK_EXIT_CODE:-0}"

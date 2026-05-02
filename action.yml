@@ -63,11 +63,14 @@ inputs:
 
 outputs:
   exit-code:
-    description: 'Exit code from stac-check (0=valid, non-zero=issues)'
+    description: 'Raw stac-check CLI exit code. Note: not authoritative for recursive validation — check `valid` instead, since stac-check often returns 0 even when recursive validation fails.'
     value: ${{ steps.run.outputs.exit-code }}
-  output-file:
-    description: 'Path to file containing CLI output (if output-file input was set)'
-    value: ${{ steps.run.outputs.output-file }}
+  log-path:
+    description: 'Path to captured stac-check stdout/stderr. Set on every successful invocation of the runner (created before input validation, so available even on early-exit errors).'
+    value: ${{ steps.run.outputs.log-path }}
+  valid:
+    description: 'Authoritative validation result: `true` if no failure markers were found in the stac-check output, `false` otherwise.'
+    value: ${{ steps.run.outputs.valid }}
 
 runs:
   using: 'composite'
@@ -101,78 +104,14 @@ runs:
         IN_OUTPUT_FILE: ${{ inputs.output-file }}
         IN_EXTRA_ARGS: ${{ inputs.extra-args }}
         IN_CONFIG: ${{ inputs.config }}
-      run: |
-        set -uo pipefail
-        ARGS=()
-
-        if [ "$IN_RECURSIVE" = "true" ]; then
-          ARGS+=(--recursive)
-          if [ -n "$IN_MAX_DEPTH" ]; then
-            ARGS+=(--max-depth "$IN_MAX_DEPTH")
-          fi
-        fi
-
-        if [ "$IN_VALIDATE_ASSETS" = "true" ]; then
-          ARGS+=(--assets --no-assets-urls)
-        fi
-
-        [ "$IN_PYDANTIC" = "true" ] && ARGS+=(--pydantic)
-        [ "$IN_VERBOSE" = "true" ] && ARGS+=(--verbose)
-
-        if [ "$IN_FAST" = "true" ]; then
-          ARGS+=(--fast)
-        elif [ "$IN_FAST_LINTING" = "true" ]; then
-          ARGS+=(--fast-linting)
-        fi
-
-        if [ -n "$IN_OUTPUT_FILE" ]; then
-          if [ "$IN_RECURSIVE" != "true" ]; then
-            echo "::error::output-file requires recursive: true (stac-check CLI limitation)"
-            exit 1
-          fi
-          ARGS+=(--output "$IN_OUTPUT_FILE")
-          echo "output-file=$IN_OUTPUT_FILE" >> "$GITHUB_OUTPUT"
-        fi
-
-        # Append extra-args (word-split intentionally for CLI flags)
-        if [ -n "$IN_EXTRA_ARGS" ]; then
-          # shellcheck disable=SC2206
-          EXTRA=($IN_EXTRA_ARGS)
-          ARGS+=("${EXTRA[@]}")
-        fi
-
-        ARGS+=("$IN_FILE")
-
-        # Handle config: file path OR inline YAML (multiline)
-        if [ -n "$IN_CONFIG" ]; then
-          if [ -f "$IN_CONFIG" ]; then
-            export STAC_CHECK_CONFIG="$IN_CONFIG"
-          elif [[ "$IN_CONFIG" == *$'\n'* ]]; then
-            CONFIG_PATH="$RUNNER_TEMP/stac-check-config.yml"
-            printf '%s' "$IN_CONFIG" > "$CONFIG_PATH"
-            export STAC_CHECK_CONFIG="$CONFIG_PATH"
-          else
-            echo "::error::config input is neither a readable file path nor multiline inline YAML"
-            exit 1
-          fi
-        fi
-
-        OUTPUT_PATH="$RUNNER_TEMP/stac-check-output.txt"
-        echo "output-path=$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
-
-        set +e
-        stac-check "${ARGS[@]}" > "$OUTPUT_PATH" 2>&1
-        EXIT_CODE=$?
-        set -e
-
-        cat "$OUTPUT_PATH"
-        echo "exit-code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "$ACTION_PATH/scripts/run.sh"
 
     - name: Write to job summary
-      if: ${{ always() && inputs.job-summary == 'true' && steps.run.outputs.output-path != '' }}
+      if: ${{ always() && inputs.job-summary == 'true' && steps.run.outputs.log-path != '' }}
       shell: bash
       env:
-        OUTPUT_PATH: ${{ steps.run.outputs.output-path }}
+        OUTPUT_PATH: ${{ steps.run.outputs.log-path }}
       run: |
         set -euo pipefail
         {
@@ -188,16 +127,19 @@ runs:
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Post PR comment
-      if: ${{ always() && inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.run.outputs.output-path != '' }}
+      if: ${{ always() && inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.run.outputs.log-path != '' }}
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        OUTPUT_PATH: ${{ steps.run.outputs.output-path }}
+        OUTPUT_PATH: ${{ steps.run.outputs.log-path }}
         PR_NUMBER: ${{ github.event.number }}
+        REPO: ${{ github.repository }}
       run: |
         set -euo pipefail
+        MARKER="<!-- stac-check-action -->"
         BODY_PATH="$RUNNER_TEMP/stac-check-comment.md"
         {
+          echo "$MARKER"
           echo "## stac-check Results"
           echo ""
           echo '```'
@@ -208,15 +150,45 @@ runs:
           fi
           echo '```'
         } > "$BODY_PATH"
-        gh pr comment "$PR_NUMBER" --body-file "$BODY_PATH"
+
+        # Find existing comment with marker (paginate to handle busy PRs)
+        COMMENT_ID=$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+          --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -n1)
+
+        if [ -n "$COMMENT_ID" ]; then
+          # Stream body via stdin to avoid ARG_MAX limits on large outputs
+          gh api --method PATCH "repos/${REPO}/issues/comments/${COMMENT_ID}" \
+            --field "body=@${BODY_PATH}"
+        else
+          gh pr comment "$PR_NUMBER" --body-file "$BODY_PATH"
+        fi
 
     - name: Fail on issues
       if: always()
       shell: bash
       env:
         EXIT_CODE: ${{ steps.run.outputs.exit-code }}
+        VALID: ${{ steps.run.outputs.valid }}
+        RUN_OUTCOME: ${{ steps.run.outcome }}
       run: |
-        if [ "${EXIT_CODE:-1}" != "0" ]; then
-          echo "::error::stac-check exited with code: ${EXIT_CODE:-1}"
-          exit "${EXIT_CODE:-1}"
+        # If the runner script failed before stac-check executed (input
+        # validation, config parse error, etc), exit-code output is empty.
+        # Surface that as the real error rather than rewriting it as a
+        # phantom 'stac-check exit 1'.
+        if [ -z "${EXIT_CODE}" ]; then
+          if [ "${RUN_OUTCOME}" = "failure" ]; then
+            echo "::error::stac-check-action runner failed before stac-check executed; see prior step output"
+            exit 1
+          fi
+          # Run step succeeded but didn't write exit-code: should not happen.
+          echo "::error::internal: run step produced no exit-code output"
+          exit 1
+        fi
+        if [ "${EXIT_CODE}" != "0" ]; then
+          echo "::error::stac-check exited with code: ${EXIT_CODE}"
+          exit "${EXIT_CODE}"
+        fi
+        if [ "${VALID:-true}" = "false" ]; then
+          echo "::error::stac-check reported validation failures (exit-code was 0 but failure markers found in output)"
+          exit 1
         fi

@@ -1,0 +1,62 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Fill in as much as you can.
+
+  - type: input
+    id: version
+    attributes:
+      label: Action version / SHA
+      description: Tag or SHA you pinned (e.g. `v1.2.0` or a full SHA)
+      placeholder: v1.2.0
+    validations:
+      required: true
+
+  - type: input
+    id: stac-check-version
+    attributes:
+      label: stac-check version
+      description: Value passed to `stac-check-version` input
+      placeholder: "1.9.1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Workflow snippet
+      description: Minimal `uses:` step that reproduces the issue (redact secrets)
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Paste the full job log / step output
+    validations:
+      required: true
+
+  - type: textarea
+    id: stac-file
+    attributes:
+      label: Minimal STAC file (if applicable)
+      description: Paste or link a minimal STAC JSON that reproduces the issue
+      render: json
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
