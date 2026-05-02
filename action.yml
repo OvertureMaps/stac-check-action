@@ -147,7 +147,7 @@ runs:
         echo "exit-code=0" >> $GITHUB_OUTPUT
 
     - name: Write to job summary
-      if: ${{ inputs.job-summary == 'true' }}
+      if: ${{ always() && inputs.job-summary == 'true' }}
       shell: bash
       run: |
         echo "## stac-check Results" >> $GITHUB_STEP_SUMMARY
@@ -159,7 +159,7 @@ runs:
         fi
 
     - name: Post PR comment
-      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
+      if: ${{ always() && inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
       shell: bash
       run: |
         if grep -q "Validation Summary" $RUNNER_TEMP/stac-check-output.txt 2>/dev/null; then
