@@ -91,8 +91,13 @@ echo "exit-code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
 #   - "Failed: N/M" where N >= 1           summary fail count (fast + standard)
 #   - "Passed: False"                      single-item validation status
 #   - "Valid: False"                       fallback display
+#
+# Also treat any non-zero CLI exit as invalid so hard errors that do not
+# print one of the markers cannot be misreported as valid.
 VALID="true"
 if grep -qE 'Recursive validation has failed!|Failed: [1-9][0-9]*/|Passed: False|Valid: False' "$OUTPUT_PATH"; then
+  VALID="false"
+elif [ "$EXIT_CODE" -ne 0 ]; then
   VALID="false"
 fi
 echo "valid=$VALID" >> "$GITHUB_OUTPUT"
