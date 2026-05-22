@@ -1,9 +1,5 @@
 # stac-check-action
 
-<p align="center">
-  <img src="./assets/og.png" alt="stac-check-action" width="600">
-</p>
-
 [![CI](https://github.com/lowlydba/stac-check-action/actions/workflows/ci.yml/badge.svg)](https://github.com/lowlydba/stac-check-action/actions/workflows/ci.yml)
 [![immutable release ruleset](https://img.shields.io/badge/immutable%20tags-active-green?logo=github)](https://github.com/lowlydba/stac-check-action/rules)
 
