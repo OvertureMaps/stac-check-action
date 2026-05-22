@@ -89,13 +89,13 @@ jobs:
         uses: rhysd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
 
       - name: Run zizmor
-        uses: zizmorcore/zizmor-action@b1d7e1fb5de872772f31590499237e7cce841e8e # v0.5.3
+        uses: zizmorcore/zizmor-action@a16621b09c6db4281f81a93cb393b05dcd7b7165 # v0.5.5
         with:
           advanced-security: false
           persona: pedantic
 
   e2e:
-    name: E2E Test with Overture STAC
+    name: E2E Test with Overture STAC (positive)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -126,7 +126,6 @@ jobs:
 
       - name: Run stac-check-action (self)
         uses: ./stac-check-action
-        continue-on-error: true
         id: e2e
         with:
           stac-check-version: 1.9.1
@@ -134,7 +133,7 @@ jobs:
           recursive: true
           validate-assets: true
 
-      - name: Verify stac-check detected failures
+      - name: Verify stac-check passed cleanly
         shell: bash
         env:
           E2E_OUTCOME: ${{ steps.e2e.outcome }}
@@ -144,20 +143,16 @@ jobs:
         run: |
           set -uo pipefail
           FAIL=0
-          if [ "${E2E_OUTCOME}" != "failure" ]; then
-            echo "::error::E2E action step outcome was '${E2E_OUTCOME}', expected 'failure' (Fail on issues step should have exited non-zero)"
+          if [ "${E2E_OUTCOME}" != "success" ]; then
+            echo "::error::E2E action step outcome was '${E2E_OUTCOME}', expected 'success' (Overture STAC should be conforming)"
             FAIL=1
           fi
-          if [ "${E2E_VALID}" != "false" ]; then
-            echo "::error::E2E valid output was '${E2E_VALID}', expected 'false' (overture STAC is non-conforming)"
+          if [ "${E2E_VALID}" != "true" ]; then
+            echo "::error::E2E valid output was '${E2E_VALID}', expected 'true' (overture STAC is conforming)"
             FAIL=1
           fi
-          # Regression sentinel: stac-check upstream returns exit 0 in recursive
-          # mode even when validation fails. The 'valid' output exists to
-          # compensate for this. If upstream ever fixes it, this assertion will
-          # break and signal we can simplify the workaround.
           if [ "${E2E_EXIT_CODE}" != "0" ]; then
-            echo "::warning::E2E exit-code was '${E2E_EXIT_CODE}', expected '0'. stac-check may have fixed recursive-mode exit codes — review whether the 'valid' output parser is still needed."
+            echo "::error::E2E exit-code was '${E2E_EXIT_CODE}', expected '0'"
             FAIL=1
           fi
           if [ "$FAIL" -ne 0 ]; then
@@ -166,7 +161,7 @@ jobs:
             echo "::endgroup::"
             exit 1
           fi
-          echo "E2E correctly detected non-conforming STAC (outcome=failure, valid=false, exit-code=0)"
+          echo "E2E confirmed conforming STAC (outcome=success, valid=true, exit-code=0)"
 
   bats:
     name: BATS Unit Tests
