@@ -1,7 +1,7 @@
 # stac-check-action
 
-[![CI](https://github.com/lowlydba/stac-check-action/actions/workflows/ci.yml/badge.svg)](https://github.com/lowlydba/stac-check-action/actions/workflows/ci.yml)
-[![immutable release ruleset](https://img.shields.io/badge/immutable%20tags-active-green?logo=github)](https://github.com/lowlydba/stac-check-action/rules)
+[![CI](https://github.com/OvertureMaps/stac-check-action/actions/workflows/ci.yml/badge.svg)](https://github.com/OvertureMaps/stac-check-action/actions/workflows/ci.yml)
+[![immutable release ruleset](https://img.shields.io/badge/immutable%20tags-active-green?logo=github)](https://github.com/OvertureMaps/stac-check-action/rules)
 
 Composite GitHub Action that runs [`stac-check`](https://github.com/stac-utils/stac-check) against local STAC files. Validates, lints, and checks best practices for items, collections, and catalogs.
 
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: lowlydba/stac-check-action@v1.0.0
+      - uses: OvertureMaps/stac-check-action@v1.0.0
         with:
           stac-check-version: 1.9.1
           file: ./stac/item.json
@@ -39,10 +39,10 @@ jobs:
 
 ## Pinning
 
-Tags are immutable per this repo's [release ruleset](https://github.com/lowlydba/stac-check-action/rules). For supply-chain-sensitive workflows, pin to a commit SHA:
+Tags are immutable per this repo's [release ruleset](https://github.com/OvertureMaps/stac-check-action/rules). For supply-chain-sensitive workflows, pin to a commit SHA:
 
 ```yaml
-- uses: lowlydba/stac-check-action@<full-commit-sha> # v1.0.0
+- uses: OvertureMaps/stac-check-action@<full-commit-sha> # v1.0.0
 ```
 
 [Dependabot](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/keeping-your-actions-up-to-date-with-dependabot) keeps SHA-pinned actions current.
@@ -86,7 +86,7 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: lowlydba/stac-check-action@v1.0.0
+      - uses: OvertureMaps/stac-check-action@v1.0.0
         with:
           stac-check-version: 1.9.1
           file: ./stac/collection.json
@@ -98,7 +98,7 @@ jobs:
 Inline config:
 
 ```yaml
-- uses: lowlydba/stac-check-action@v1.0.0
+- uses: OvertureMaps/stac-check-action@v1.0.0
   with:
     stac-check-version: 1.9.1
     file: ./item.json
