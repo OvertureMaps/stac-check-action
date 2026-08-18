@@ -62,6 +62,7 @@ Tags are immutable per this repo's [release ruleset](https://github.com/Overture
 | `fast-linting` | Fast validation with linting, no geometry | `'true'` / `'false'` | `'false'` |
 | `output-file` | Save CLI output to file (requires `recursive: true`) | string | |
 | `config` | Path to config file or inline YAML (sets `STAC_CHECK_CONFIG`) | string | |
+| `stream-output` | Stream `stac-check` output to the Actions log as it runs | `'true'` / `'false'` | `'true'` |
 | `job-summary` | Write results to job summary | `'true'` / `'false'` | `'true'` |
 | `comment-pr` | Post results as PR comment (requires `pull-requests: write`) | `'true'` / `'false'` | `'false'` |
 | `extra-args` | Extra CLI arguments, appended last | string | |
