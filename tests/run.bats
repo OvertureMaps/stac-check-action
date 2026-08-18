@@ -65,6 +65,15 @@ teardown() {
   grep -q "log-path=" "$GITHUB_OUTPUT"
 }
 
+@test "stac-check output is streamed to stdout, not just captured to log-path" {
+  export MOCK_STDOUT="progress line"
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"progress line"* ]]
+  LOG_PATH="$(grep log-path "$GITHUB_OUTPUT" | cut -d= -f2)"
+  grep -q "progress line" "$LOG_PATH"
+}
+
 # ---------------------------------------------------------------------------
 # Flag construction
 # ---------------------------------------------------------------------------

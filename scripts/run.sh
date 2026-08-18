@@ -74,12 +74,14 @@ if [ -n "${IN_CONFIG:-}" ]; then
   fi
 fi
 
+# Stream through tee so per-item progress (stac-check prints a line as each
+# object validates) shows up in the Actions log live instead of only
+# appearing once the whole run finishes.
 set +e
-stac-check "${ARGS[@]}" > "$OUTPUT_PATH" 2>&1
-EXIT_CODE=$?
+stac-check "${ARGS[@]}" 2>&1 | tee "$OUTPUT_PATH"
+EXIT_CODE="${PIPESTATUS[0]}"
 set -e
 
-cat "$OUTPUT_PATH"
 echo "exit-code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
 
 # Parse output for explicit failure markers. stac-check's exit code is
