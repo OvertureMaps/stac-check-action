@@ -5,7 +5,7 @@
 # Required env vars (set by action.yml env: block):
 #   IN_FILE, IN_RECURSIVE, IN_MAX_DEPTH, IN_VALIDATE_ASSETS, IN_PYDANTIC,
 #   IN_VERBOSE, IN_FAST, IN_FAST_LINTING, IN_OUTPUT_FILE, IN_EXTRA_ARGS,
-#   IN_CONFIG
+#   IN_CONFIG, IN_STREAM_OUTPUT
 #
 # GitHub Actions env vars (defaulted for local/test use):
 #   GITHUB_OUTPUT, RUNNER_TEMP
@@ -76,10 +76,22 @@ fi
 
 # Stream through tee so per-item progress (stac-check prints a line as each
 # object validates) shows up in the Actions log live instead of only
-# appearing once the whole run finishes.
+# appearing once the whole run finishes. Toggleable via stream-output input
+# for callers who'd rather keep the log quiet until the summary at the end.
+#
+# PYTHONUNBUFFERED is required here: stac-check is a Python CLI, and Python
+# fully buffers stdout (rather than line-buffering) whenever it isn't a TTY,
+# which a pipe to tee never is. Without it, tee gets nothing to stream until
+# Python's internal buffer fills or the process exits, defeating the point.
 set +e
-stac-check "${ARGS[@]}" 2>&1 | tee "$OUTPUT_PATH"
-EXIT_CODE="${PIPESTATUS[0]}"
+if [ "${IN_STREAM_OUTPUT:-true}" = "true" ]; then
+  PYTHONUNBUFFERED=1 stac-check "${ARGS[@]}" 2>&1 | tee "$OUTPUT_PATH"
+  EXIT_CODE="${PIPESTATUS[0]}"
+else
+  stac-check "${ARGS[@]}" > "$OUTPUT_PATH" 2>&1
+  EXIT_CODE=$?
+  cat "$OUTPUT_PATH"
+fi
 set -e
 
 echo "exit-code=$EXIT_CODE" >> "$GITHUB_OUTPUT"

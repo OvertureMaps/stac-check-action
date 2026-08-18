@@ -32,6 +32,7 @@ setup() {
   export IN_OUTPUT_FILE=""
   export IN_EXTRA_ARGS=""
   export IN_CONFIG=""
+  export IN_STREAM_OUTPUT="true"
 
   echo '{"type":"Feature"}' > "$IN_FILE"
 
@@ -72,6 +73,24 @@ teardown() {
   [[ "$output" == *"progress line"* ]]
   LOG_PATH="$(grep log-path "$GITHUB_OUTPUT" | cut -d= -f2)"
   grep -q "progress line" "$LOG_PATH"
+}
+
+@test "stream-output:false — output still captured to log-path but printed only once, at the end" {
+  export IN_STREAM_OUTPUT="false"
+  export MOCK_STDOUT="quiet line"
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"quiet line"* ]]
+  LOG_PATH="$(grep log-path "$GITHUB_OUTPUT" | cut -d= -f2)"
+  grep -q "quiet line" "$LOG_PATH"
+}
+
+@test "stream-output:false — exit code still recorded correctly" {
+  export IN_STREAM_OUTPUT="false"
+  export MOCK_EXIT_CODE=2
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q "exit-code=2" "$GITHUB_OUTPUT"
 }
 
 # ---------------------------------------------------------------------------

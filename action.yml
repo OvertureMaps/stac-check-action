@@ -60,6 +60,10 @@ inputs:
     description: 'Path to config file or inline YAML (sets STAC_CHECK_CONFIG env var)'
     required: false
     default: ''
+  stream-output:
+    description: 'Stream stac-check output to the Actions log as it runs, instead of only after it exits'
+    required: false
+    default: 'true'
 
 outputs:
   exit-code:
@@ -104,6 +108,7 @@ runs:
         IN_OUTPUT_FILE: ${{ inputs.output-file }}
         IN_EXTRA_ARGS: ${{ inputs.extra-args }}
         IN_CONFIG: ${{ inputs.config }}
+        IN_STREAM_OUTPUT: ${{ inputs.stream-output }}
         ACTION_PATH: ${{ github.action_path }}
       run: bash "$ACTION_PATH/scripts/run.sh"
 
