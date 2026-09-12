@@ -122,7 +122,7 @@ jobs:
           uv run gen-stac --output "${RUNNER_TEMP}/stac-catalog" --debug
 
       - name: Run stac-check-action (self)
-        uses: $/stac-check-action
+        uses: $/
         id: e2e
         with:
           stac-check-version: 1.9.1
