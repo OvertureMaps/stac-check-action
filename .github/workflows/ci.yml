@@ -191,12 +191,33 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Restore Overture generator binary
+        id: overture-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/overture-tools/bin
+          key: overture-stac-4.0.0-${{ runner.os }}-${{ runner.arch }}-v1
+
       - name: Install Overture generator
         shell: bash
+        env:
+          CACHE_HIT: ${{ steps.overture-cache.outputs.cache-hit }}
         run: |
           set -euo pipefail
-          cargo install --locked overture-stac --version 4.0.0 --root "${RUNNER_TEMP}/overture-tools"
+          if [ "$CACHE_HIT" = "true" ]; then
+            echo "Using cached Overture generator binary."
+          else
+            echo "Compiling published overture-stac 4.0.0 (cold binary cache)."
+            cargo install --locked overture-stac --version 4.0.0 --root "${RUNNER_TEMP}/overture-tools"
+          fi
           "${RUNNER_TEMP}/overture-tools/bin/overture-stac" --version
+
+      - name: Cache installed Overture generator binary
+        if: steps.overture-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/overture-tools/bin
+          key: ${{ steps.overture-cache.outputs.cache-primary-key }}
 
       - name: Generate Overture catalog
         shell: bash
