@@ -6,7 +6,7 @@ Composite GitHub Action using the rustac PyPI distribution's Rust CLI. Python 3.
 
 ## Execution
 
-1. Install the exact rustac package version with `python -m pip`. Strip a leading v; latest opts into an unpinned package.
+1. Install the exact rustac package version with `python -m pip`. Strip a leading v; latest opts into an unpinned package. Log both the installed package version and the embedded CLI version.
 2. Run `scripts/run.py` with inputs supplied through environment variables, not interpolated shell commands.
 3. Create a unique report directory beneath RUNNER_TEMP and publish log-path before checking inputs.
 4. Check supported input values and reject unsafe CLI format/input overrides with explicit diagnostics.
@@ -17,7 +17,7 @@ Composite GitHub Action using the rustac PyPI distribution's Rust CLI. Python 3.
 9. Split failing Item batches only when rustac supplies structured object errors or its recognized deserialization error. Other failures stop isolation and fail the run, avoiding repeated requests for shared operational errors. IDs don't identify files uniquely. Temporary batch files are deleted even when rustac fails or times out.
 10. Interpret nonzero process status as a failure. Parse structured CLI errors when available; retain plain diagnostics otherwise. Replace leading instance JSON with a compact marker, and supply filename and parse troubleshooting guidance. Verbose logs retain raw diagnostics.
 11. Publish JSON and Markdown reports and aggregate valid/exit-code outputs, including operational failures. Copy the log to output-file when requested.
-12. Publish the Markdown summary and optional sticky PR comment before the final step fails validation. Installation failures have no runner reports.
+12. Publish the Markdown summary and optional sticky PR comment before the final step fails validation. Publication steps log success or why there's nothing to publish, including disabled options and absent reports. The final step logs success or failure explicitly. Installation failures have no runner reports.
 
 ## Reports
 

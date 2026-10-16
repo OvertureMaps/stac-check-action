@@ -529,12 +529,65 @@ class RunnerTests(unittest.TestCase):
         proc = self.action_step(
             "Write to job summary",
             {
+                "ENABLED": "true",
                 "SUMMARY_PATH": str(summary),
                 "GITHUB_STEP_SUMMARY": str(destination),
             },
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(summary.read_text(), destination.read_text())
+        self.assertIn("Published validation report", proc.stdout)
+
+    def test_install_logs_package_and_cli_versions(self):
+        prelude = """
+        python() {
+          if [ "$1" = -c ]; then
+            echo 'Installed rustac package: 0.9.17'
+          else
+            printf 'python %s\\n' "$*"
+          fi
+        }
+        rustac() {
+          test "$1" = --version || return 1
+          echo 'rustac 0.2.14'
+        }
+        """
+        for version, requirement in [
+            ("v0.9.17", "rustac==0.9.17"),
+            ("latest", "--quiet rustac"),
+        ]:
+            with self.subTest(version=version):
+                proc = self.action_step(
+                    "Install validator",
+                    {"VERSION": version, "ACTION_PATH": str(self.root)},
+                    prelude,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertIn(requirement, proc.stdout)
+                self.assertIn("Installed rustac package: 0.9.17", proc.stdout)
+                self.assertIn("rustac 0.2.14", proc.stdout)
+
+    def test_optional_steps_log_noops_without_external_calls(self):
+        prelude = "gh() { echo 'unexpected gh call' >&2; return 99; }"
+        for step, env, message in [
+            ("Write to job summary", {"ENABLED": "false"}, "disabled"),
+            ("Write to job summary", {"ENABLED": "true"}, "No validation summary"),
+            ("Post PR comment", {"ENABLED": "false"}, "disabled"),
+            (
+                "Post PR comment",
+                {"ENABLED": "true", "EVENT_NAME": "push"},
+                "Not a pull_request",
+            ),
+            (
+                "Post PR comment",
+                {"ENABLED": "true", "EVENT_NAME": "pull_request"},
+                "No validation summary",
+            ),
+        ]:
+            with self.subTest(step=step, env=env):
+                proc = self.action_step(step, {"SUMMARY_PATH": "", **env}, prelude)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertIn(message, proc.stdout)
 
     def test_final_action_status(self):
         for code, valid, outcome, expected in [
@@ -554,12 +607,17 @@ class RunnerTests(unittest.TestCase):
                     },
                 )
                 self.assertEqual(proc.returncode, expected, proc.stderr)
+                self.assertTrue(proc.stdout.strip())
+                if expected == 0:
+                    self.assertIn("no issues found", proc.stdout)
 
     def test_sticky_comment_create_and_update_without_network(self):
         summary = self.root / "summary.md"
         summary.write_text("## STAC validation\nPassed\n", encoding="utf-8")
         calls = self.root / "gh-calls"
         env = {
+            "ENABLED": "true",
+            "EVENT_NAME": "pull_request",
             "SUMMARY_PATH": str(summary),
             "RUNNER_TEMP": str(self.root),
             "REPO": "example/repo",
@@ -583,6 +641,7 @@ class RunnerTests(unittest.TestCase):
                 )
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertIn(expected, calls.read_text())
+                self.assertIn("Published validation PR comment", proc.stdout)
                 body = (self.root / "stac-check-comment.md").read_text()
                 self.assertTrue(body.startswith("<!-- stac-check-action -->"))
                 self.assertIn(summary.read_text(), body)

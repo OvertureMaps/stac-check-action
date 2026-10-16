@@ -76,6 +76,7 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
+        echo "Installing validator dependencies and rustac (requested package version: $VERSION)"
         python -m pip install --quiet -r "$ACTION_PATH/requirements.txt"
         if [ "$VERSION" = "latest" ]; then
           python -m pip install --quiet rustac
@@ -83,6 +84,8 @@ runs:
           VERSION="${VERSION#v}"
           python -m pip install --quiet "rustac==${VERSION}"
         fi
+        python -c "from importlib.metadata import version; print('Installed rustac package: ' + version('rustac'))"
+        rustac --version
 
     - name: Validate STAC
       id: run
@@ -100,24 +103,48 @@ runs:
       run: python "$ACTION_PATH/scripts/run.py"
 
     - name: Write to job summary
-      if: ${{ always() && inputs.job-summary == 'true' && steps.run.outputs.summary-path != '' }}
+      if: always()
       shell: bash
       env:
         SUMMARY_PATH: ${{ steps.run.outputs.summary-path }}
+        ENABLED: ${{ inputs.job-summary }}
       run: |
         set -euo pipefail
+        if [ "$ENABLED" != "true" ]; then
+          echo "Job summary disabled; nothing to publish."
+          exit 0
+        fi
+        if [ -z "$SUMMARY_PATH" ]; then
+          echo "No validation summary was produced; nothing to publish."
+          exit 0
+        fi
         cat "$SUMMARY_PATH" >> "$GITHUB_STEP_SUMMARY"
+        echo "Published validation report to the job summary."
 
     - name: Post PR comment
-      if: ${{ always() && inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.run.outputs.summary-path != '' }}
+      if: always()
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
         SUMMARY_PATH: ${{ steps.run.outputs.summary-path }}
         PR_NUMBER: ${{ github.event.number }}
         REPO: ${{ github.repository }}
+        ENABLED: ${{ inputs.comment-pr }}
+        EVENT_NAME: ${{ github.event_name }}
       run: |
         set -euo pipefail
+        if [ "$ENABLED" != "true" ]; then
+          echo "PR comments disabled; nothing to publish."
+          exit 0
+        fi
+        if [ "$EVENT_NAME" != "pull_request" ]; then
+          echo "Not a pull_request event; no PR comment to publish."
+          exit 0
+        fi
+        if [ -z "$SUMMARY_PATH" ]; then
+          echo "No validation summary was produced; no PR comment to publish."
+          exit 0
+        fi
         MARKER="<!-- stac-check-action -->"
         BODY_PATH="$RUNNER_TEMP/stac-check-comment.md"
         {
@@ -129,11 +156,14 @@ runs:
           --jq "[.[][] | select((.body // \"\") | startswith(\"$MARKER\"))][0].id // empty")
 
         if [ -n "$COMMENT_ID" ]; then
+          echo "Updating existing validation PR comment."
           gh api --method PATCH "repos/${REPO}/issues/comments/${COMMENT_ID}" \
             --field "body=@${BODY_PATH}"
         else
+          echo "Creating validation PR comment."
           gh pr comment "$PR_NUMBER" --body-file "$BODY_PATH"
         fi
+        echo "Published validation PR comment."
 
     - name: Fail on issues
       if: always()
@@ -159,3 +189,4 @@ runs:
           echo "::error::STAC validation reported failures"
           exit 1
         fi
+        echo "STAC validation passed; no issues found."
