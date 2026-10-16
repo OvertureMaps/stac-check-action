@@ -172,11 +172,72 @@ jobs:
           test "$CODE" = 1
           grep -q 'invalid.json' "$SUMMARY"
 
+  overture-e2e:
+    name: Current Overture generator against public data
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Build catalog with current Overture generator
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/OvertureMaps/stac.git "${RUNNER_TEMP}/overture-stac"
+          git -C "${RUNNER_TEMP}/overture-stac" rev-parse HEAD
+          rustup toolchain install stable --profile minimal --no-self-update
+          cargo +stable run --locked --release \
+            --manifest-path "${RUNNER_TEMP}/overture-stac/Cargo.toml" -- \
+            build --debug --output "${RUNNER_TEMP}/overture-catalog"
+
+      - name: Validate generated Overture catalog
+        id: overture
+        uses: $/
+        with:
+          file: ${{ runner.temp }}/overture-catalog/catalog.json
+          recursive: true
+          validate-assets: true
+
+      - name: Verify complete local traversal and reports
+        shell: bash
+        env:
+          VALID: ${{ steps.overture.outputs.valid }}
+          CODE: ${{ steps.overture.outputs.exit-code }}
+          REPORT: ${{ steps.overture.outputs.report-path }}
+          SUMMARY: ${{ steps.overture.outputs.summary-path }}
+        run: |
+          set -euo pipefail
+          test "$VALID" = true
+          test "$CODE" = 0
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "overture-catalog"
+          documents = [json.loads(path.read_text()) for path in root.rglob("*.json")]
+          report = json.loads(Path(os.environ["REPORT"]).read_text())
+          assert report["valid"] and not report["errors"], report
+          assert report["objects"] == len(documents), report
+          assert report["items"] == sum(doc.get("type") == "Feature" for doc in documents), report
+          assert report["items"] > 0 and report["collections"] > 0 and report["catalogs"] > 0, report
+          assert "Passed" in Path(os.environ["SUMMARY"]).read_text()
+          PY
+
   rollup-tests:
     name: Test Rollup
     runs-on: ubuntu-latest
     permissions: {}
-    needs: [test, lint, lint-actions, e2e]
+    needs: [test, lint, lint-actions, e2e, overture-e2e]
     if: always()
     steps:
       - uses: lowlydba/are-we-good@6b10e5f2697555fbaf7f8f37ce38d4454c954a4c # v1.2.2

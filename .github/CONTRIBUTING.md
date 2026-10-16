@@ -23,7 +23,7 @@ IN_FILE=./stac/catalog.json IN_RECURSIVE=true python scripts/run.py
 
 The wrapper publishes reports before the composite action's final step raises validation failures. Inspect its report or valid output for the validation result, not its own process exit code.
 
-CI runs unit coverage, real rustac integration tests, YAML validation, line-ending checks, zizmor, and composite-action tests. The deterministic catalog fixture avoids coupling CI to public STAC data changes or the generator's release schedule. Test both errors and success paths when changing the wrapper.
+CI runs unit coverage, real rustac integration tests, YAML validation, line-ending checks, zizmor, and composite-action tests. The deterministic catalog fixture provides stable success and failure cases. A separate required job builds the current OvertureMaps/stac default branch against the public bucket in sample mode (one Item per Collection) and validates the generated catalog with this action. It checks that traversal discovers every generated JSON object and logs the generator commit for reproducibility. Public data, generator changes, and network failures can fail that job. Test both errors and success paths when changing the wrapper.
 
 ## Pull requests
 

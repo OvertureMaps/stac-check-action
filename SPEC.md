@@ -48,3 +48,5 @@ Link-resolution errors don't stop traversal of sibling links. Container subproce
 Unit tests exercise traversal, aliases/cycles/depth, malformed input, assets, CLI contracts, batching and failure isolation, escaping, invalid inputs, operational failures, logs, and reports. Branch measurement is enabled with a minimum combined coverage of 95%.
 
 Real-CLI integration tests cover a large local catalog, invalid structures, duplicate IDs, and extension schema rejection. Tests run on Linux and Windows with Python 3.11, 3.12, and 3.14. A composite-action job checks summaries and outputs for passing and failing inputs. All remote action references are SHA-pinned; self references use GitHub's secure `$/` syntax.
+
+A separate required composite-action job builds the current Overture generator against the public data bucket in sample mode, covering one Item per Collection across available releases. It verifies that every generated JSON object is discovered and that validation and report publication succeed. This job depends on the current generator, public data, and schema availability; the generator commit is logged.
