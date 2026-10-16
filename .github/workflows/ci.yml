@@ -13,13 +13,15 @@ concurrency:
 
 jobs:
   test:
-    name: Test Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: Test ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     permissions:
       contents: read
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.11', '3.12', '3.14']
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -30,27 +32,19 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install stac-check
-        run: pip install stac-check==1.9.1
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt rustac==0.9.17
 
-      - name: Create test STAC item
-        run: |
-          cat > "${RUNNER_TEMP}/test-item.json" << 'EOF'
-          {
-            "type": "Feature",
-            "stac_version": "1.0.0",
-            "stac_extensions": [],
-            "id": "test-item",
-            "geometry": {"type": "Point", "coordinates": [0, 0]},
-            "bbox": [0, 0, 0, 0],
-            "properties": {"datetime": "2024-01-01T00:00:00Z"},
-            "links": [{"rel": "self", "href": "test-item.json"}],
-            "assets": {}
-          }
-          EOF
+      - name: Unit tests
+        run: python -m coverage run --branch --source=scripts -m unittest discover -s tests -p "test_*.py"
 
-      - name: Run stac-check
-        run: stac-check "${RUNNER_TEMP}/test-item.json"
+      - name: Enforce coverage
+        run: python -m coverage report --fail-under=95 --show-missing
+
+      - name: Real rustac integration tests
+        env:
+          RUN_INTEGRATION: '1'
+        run: python -m unittest discover -s tests -p test_integration.py -v
 
   lint:
     name: Lint
@@ -64,6 +58,7 @@ jobs:
 
       - name: Validate action.yml
         run: |
+          python3 -m pip install -r requirements-test.txt
           python3 -c "
           import yaml
           with open('action.yml') as f:
@@ -92,14 +87,14 @@ jobs:
           persona: pedantic
 
   e2e:
-    name: E2E Test with Overture STAC (positive)
+    name: Composite action reports and failure handling
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: stac-check-action
           persist-credentials: false
 
       - name: Set up Python
@@ -107,45 +102,35 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-
-      - name: Clone and setup overturemaps/stac
-        run: |
-          git clone --depth 1 https://github.com/OvertureMaps/stac.git "${RUNNER_TEMP}/overture-stac"
-          cd "${RUNNER_TEMP}/overture-stac"
-          uv sync
-
-      - name: Generate STAC catalog
-        run: |
-          cd "${RUNNER_TEMP}/overture-stac"
-          uv run gen-stac --output "${RUNNER_TEMP}/stac-catalog" --debug
+      - name: Generate deterministic catalog
+        run: python tests/generate_catalog.py "${RUNNER_TEMP}/stac-catalog"
 
       - name: Run stac-check-action (self)
         uses: $/
         id: e2e
         with:
-          stac-check-version: 1.9.1
           file: ${{ runner.temp }}/stac-catalog/catalog.json
           recursive: true
           validate-assets: true
 
-      - name: Verify stac-check passed cleanly
+      - name: Verify complete catalog and reports
         shell: bash
         env:
           E2E_OUTCOME: ${{ steps.e2e.outcome }}
           E2E_VALID: ${{ steps.e2e.outputs.valid }}
           E2E_EXIT_CODE: ${{ steps.e2e.outputs.exit-code }}
           E2E_OUTPUT_PATH: ${{ steps.e2e.outputs.log-path }}
+          E2E_REPORT_PATH: ${{ steps.e2e.outputs.report-path }}
+          E2E_SUMMARY_PATH: ${{ steps.e2e.outputs.summary-path }}
         run: |
           set -uo pipefail
           FAIL=0
           if [ "${E2E_OUTCOME}" != "success" ]; then
-            echo "::error::E2E action step outcome was '${E2E_OUTCOME}', expected 'success' (Overture STAC should be conforming)"
+            echo "::error::E2E action step outcome was '${E2E_OUTCOME}', expected 'success'"
             FAIL=1
           fi
           if [ "${E2E_VALID}" != "true" ]; then
-            echo "::error::E2E valid output was '${E2E_VALID}', expected 'true' (overture STAC is conforming)"
+            echo "::error::E2E valid output was '${E2E_VALID}', expected 'true'"
             FAIL=1
           fi
           if [ "${E2E_EXIT_CODE}" != "0" ]; then
@@ -153,31 +138,45 @@ jobs:
             FAIL=1
           fi
           if [ "$FAIL" -ne 0 ]; then
-            echo "::group::stac-check output"
+            echo "::group::Validation output"
             [ -f "${E2E_OUTPUT_PATH}" ] && cat "${E2E_OUTPUT_PATH}" || echo "(output file missing)"
             echo "::endgroup::"
             exit 1
           fi
           echo "E2E confirmed conforming STAC (outcome=success, valid=true, exit-code=0)"
+          python -c '
+          import json, os
+          from pathlib import Path
+          r = json.loads(Path(os.environ["E2E_REPORT_PATH"]).read_text())
+          assert r["valid"] and r["items"] == 1000 and r["objects"] == 1002, r
+          assert r["skipped_remote"] == 0 and r["cli_calls"] == 3, r
+          assert "Passed" in Path(os.environ["E2E_SUMMARY_PATH"]).read_text()
+          '
 
-  bats:
-    name: BATS Unit Tests
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Invalid object fails but publishes results
+        id: invalid
+        continue-on-error: true
+        uses: $/
         with:
-          persist-credentials: false
+          file: ${{ runner.temp }}/stac-catalog/invalid.json
 
-      - name: Run BATS tests
-        run: npx -y bats@1.13.0 tests/
+      - name: Verify failure outputs
+        env:
+          OUTCOME: ${{ steps.invalid.outcome }}
+          VALID: ${{ steps.invalid.outputs.valid }}
+          CODE: ${{ steps.invalid.outputs.exit-code }}
+          SUMMARY: ${{ steps.invalid.outputs.summary-path }}
+        run: |
+          test "$OUTCOME" = failure
+          test "$VALID" = false
+          test "$CODE" = 1
+          grep -q 'invalid.json' "$SUMMARY"
 
   rollup-tests:
     name: Test Rollup
     runs-on: ubuntu-latest
     permissions: {}
-    needs: [test, lint, lint-actions, e2e, bats]
+    needs: [test, lint, lint-actions, e2e]
     if: always()
     steps:
       - uses: lowlydba/are-we-good@6b10e5f2697555fbaf7f8f37ce38d4454c954a4c # v1.2.2
