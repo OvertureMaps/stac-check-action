@@ -13,7 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This p
 - Traverse local JSON and map published absolute links to local files, avoiding catalog HTTP requests. Batch Items in one Rust process and validate Catalogs/Collections with bounded concurrency.
 - `exit-code` is an aggregate 0/1 status. Root depth is zero; output-file works without recursion.
 - **Breaking:** Remove the stac-check-version, config, pydantic, fast, and fast-linting inputs. Stac-check CLI flags aren't supported.
-- Deterministic composite tests and real-CLI integration tests supplement a current-generator Overture sample-catalog test against public data. Linux/Windows unit CI measures branches and requires 95% combined coverage.
+- Deterministic composite tests and real-CLI integration tests supplement an Overture sample-catalog test using the published generator against public data. Linux/Windows unit CI measures branches and requires 95% combined coverage.
 
 ### Migration from v1
 
