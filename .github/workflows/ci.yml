@@ -179,6 +179,8 @@ jobs:
     name: Released Overture generator against public data
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      OVERTURE_STAC_VERSION: '4.0.0'
     permissions:
       contents: read
     steps:
@@ -196,7 +198,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/overture-tools/bin
-          key: overture-stac-4.0.0-${{ runner.os }}-${{ runner.arch }}-v1
+          key: overture-stac-${{ env.OVERTURE_STAC_VERSION }}-${{ runner.os }}-${{ runner.arch }}-v1
 
       - name: Install Overture generator
         shell: bash
@@ -207,8 +209,8 @@ jobs:
           if [ "$CACHE_HIT" = "true" ]; then
             echo "Using cached Overture generator binary."
           else
-            echo "Compiling published overture-stac 4.0.0 (cold binary cache)."
-            cargo install --locked overture-stac --version 4.0.0 --root "${RUNNER_TEMP}/overture-tools"
+            echo "Compiling published overture-stac ${OVERTURE_STAC_VERSION} (cold binary cache)."
+            cargo install --locked overture-stac --version "$OVERTURE_STAC_VERSION" --root "${RUNNER_TEMP}/overture-tools"
           fi
           "${RUNNER_TEMP}/overture-tools/bin/overture-stac" --version
 
