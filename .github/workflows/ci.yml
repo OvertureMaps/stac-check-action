@@ -228,8 +228,10 @@ jobs:
           "${RUNNER_TEMP}/overture-tools/bin/overture-stac" build \
             --debug --output "${RUNNER_TEMP}/overture-catalog"
 
+      # overture-stac output has longitudes slightly past ±180; the next step allows only those errors.
       - name: Validate generated Overture catalog
         id: overture
+        continue-on-error: true
         uses: $/
         with:
           file: ${{ runner.temp }}/overture-catalog/catalog.json
@@ -245,21 +247,30 @@ jobs:
           SUMMARY: ${{ steps.overture.outputs.summary-path }}
         run: |
           set -euo pipefail
-          test "$VALID" = true
-          test "$CODE" = 0
           python - <<'PY'
           import json
           import os
+          import re
           from pathlib import Path
 
           root = Path(os.environ["RUNNER_TEMP"]) / "overture-catalog"
           documents = [json.loads(path.read_text()) for path in root.rglob("*.json")]
           report = json.loads(Path(os.environ["REPORT"]).read_text())
-          assert report["valid"] and not report["errors"], report
+          known = re.compile(
+              r"geometry: position \d+ longitude (-?180\.\d+) is outside \[-180, 180\]"
+          )
+          for error in report["errors"]:
+              match = known.fullmatch(error["message"])
+              assert match and abs(float(match[1])) - 180 < 1e-3, error
+          expected_valid = not report["errors"]
+          assert report["valid"] == expected_valid, report
+          assert os.environ["VALID"] == str(expected_valid).lower(), os.environ["VALID"]
+          assert os.environ["CODE"] == ("0" if expected_valid else "1"), os.environ["CODE"]
           assert report["objects"] == len(documents), report
           assert report["items"] == sum(doc.get("type") == "Feature" for doc in documents), report
           assert report["items"] > 0 and report["collections"] > 0 and report["catalogs"] > 0, report
-          assert "Passed" in Path(os.environ["SUMMARY"]).read_text()
+          result = "Passed" if expected_valid else "Failed"
+          assert f"**Result: {result}**" in Path(os.environ["SUMMARY"]).read_text()
           PY
 
   rollup-tests:
