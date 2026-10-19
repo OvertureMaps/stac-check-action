@@ -317,20 +317,23 @@ class Runner:
                 "stac-check CLI arguments aren't supported."
             )
         raw_depth = self.env.get("IN_MAX_DEPTH", "")
-        max_depth = (
-            int(raw_depth)
-            if raw_depth and self.env.get("IN_RECURSIVE") == "true"
-            else None
-        )
-        if max_depth is not None and max_depth < 0:
-            raise ValueError(
-                "max-depth must be a non-negative integer (root is depth 0)"
-            )
+        max_depth = None
+        if raw_depth and self.env.get("IN_RECURSIVE") == "true":
+            try:
+                max_depth = int(raw_depth)
+            except ValueError:
+                max_depth = -1
+            if max_depth < 0:
+                raise ValueError(
+                    "max-depth must be a non-negative integer (root is depth 0)"
+                )
         file = self.env.get("IN_FILE", "")
         if not file:
             raise ValueError("file is required")
-        if urlsplit(file).scheme in ("http", "https", "s3", "gs", "az"):
-            raise ValueError("file must be a local path")
+        # A single-letter scheme is a Windows drive letter, not a URL scheme.
+        scheme = urlsplit(file).scheme
+        if len(scheme) > 1 and scheme != "file":
+            raise ValueError(f"file must be a local path; got {scheme}:// input")
         self.crawl(
             Path(file).resolve(), self.env.get("IN_RECURSIVE") == "true", max_depth
         )

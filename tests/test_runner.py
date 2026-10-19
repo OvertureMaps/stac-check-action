@@ -441,11 +441,23 @@ class RunnerTests(unittest.TestCase):
             ("MAX_DEPTH", "abc"),
             ("FILE", ""),
             ("FILE", "https://host/catalog.json"),
+            ("FILE", "ftp://host/catalog.json"),
+            ("FILE", "s3a://bucket/catalog.json"),
             ("RECURSIVE", "yes"),
+        ]:
+            with self.subTest(name=name, value=value):
+                runner = validator.Runner({**self.env, f"IN_{name}": value}, self.work)
+                with self.assertRaises(ValueError):
+                    runner.run()
+
+    def test_input_errors_are_readable(self):
+        for name, value, message in [
+            ("MAX_DEPTH", "abc", "max-depth must be a non-negative integer"),
+            ("FILE", "ftp://host/catalog.json", "file must be a local path"),
         ]:
             with self.subTest(name=name):
                 runner = validator.Runner({**self.env, f"IN_{name}": value}, self.work)
-                with self.assertRaises(ValueError):
+                with self.assertRaisesRegex(ValueError, message):
                     runner.run()
 
     def test_supported_args(self):
