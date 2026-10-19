@@ -119,6 +119,19 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.crawl(), ["catalog.json", "a.json", "b.json"])
         self.assertEqual(self.runner.skipped_remote, 1)
 
+    def test_pathless_links_resolve_to_source_document(self):
+        self.write(
+            "catalog.json",
+            catalog(
+                [
+                    {"rel": "child", "href": "#frag"},
+                    {"rel": "child", "href": "?revision=1"},
+                ]
+            ),
+        )
+        self.assertEqual(self.crawl(), ["catalog.json"])
+        self.assertEqual(self.runner.failures, [])
+
     def test_malformed_link_does_not_block_valid_siblings(self):
         self.write(
             "catalog.json",

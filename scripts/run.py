@@ -103,6 +103,8 @@ class Runner:
             return Path(url2pathname(url.path)).resolve()
         if url.scheme:
             raise ValueError(f"Unsupported link scheme: {url.scheme}")
+        if not url.path:
+            return source
         return (source.parent / unquote(url.path)).resolve()
 
     def crawl(self, file: Path, recursive: bool, max_depth: int | None) -> None:
