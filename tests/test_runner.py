@@ -102,6 +102,32 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.runner.skipped_remote, 2)
         self.assertIn("does not validate those targets", self.capture.getvalue())
 
+    def test_equivalent_origins_resolve_locally(self):
+        self.write(
+            "catalog.json",
+            catalog(
+                [
+                    {"rel": "self", "href": "https://example.test/stac/catalog.json"},
+                    {"rel": "child", "href": "https://EXAMPLE.TEST/stac/a.json"},
+                    {"rel": "child", "href": "https://example.test:443/stac/b.json"},
+                    {"rel": "child", "href": "https://example.test:8443/stac/c.json"},
+                ]
+            ),
+        )
+        self.write("a.json", catalog())
+        self.write("b.json", catalog())
+        self.assertEqual(self.crawl(), ["catalog.json", "a.json", "b.json"])
+        self.assertEqual(self.runner.skipped_remote, 1)
+
+    def test_malformed_link_does_not_block_valid_siblings(self):
+        self.write(
+            "catalog.json",
+            catalog([{"rel": "item", "href": 42}, {"rel": "child", "href": "a.json"}]),
+        )
+        self.write("a.json", catalog())
+        self.assertEqual(self.crawl(), ["catalog.json", "a.json"])
+        self.assertEqual(len(self.runner.failures), 1)
+
     def test_absolute_missing_target_does_not_fetch_remote(self):
         self.write(
             "catalog.json",
@@ -153,9 +179,9 @@ class RunnerTests(unittest.TestCase):
             ([], "Expected a STAC"),
             ({}, "Expected type"),
             (catalog("bad"), "links must"),
-            (catalog([{}]), "links must"),
-            (catalog([42]), "links must"),
-            (catalog([{"href": 1}]), "links must"),
+            (catalog([{}]), "links[0] must"),
+            (catalog([42]), "links[0] must"),
+            (catalog([{"href": 1}]), "links[0] must"),
         ]:
             with self.subTest(value=value):
                 self.runner.failures.clear()

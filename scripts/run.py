@@ -75,15 +75,21 @@ class Runner:
         if len(self.failures) <= 50:
             annotation("error", message[:2000], str(path))
 
+    @staticmethod
+    def origin(url) -> tuple[str, str, int | None]:
+        default = {"http": 80, "https": 443}.get(url.scheme)
+        try:
+            port = url.port or default
+        except ValueError:
+            port = None
+        return url.scheme, (url.hostname or "").lower(), port
+
     def local_path(self, href: str, source: Path, base: str) -> Path | None:
         url = urlsplit(href)
         if url.scheme in ("http", "https") or (not url.scheme and url.netloc):
             target = urlsplit(urljoin(base, href))
             root = urlsplit(base)
-            if root.scheme and (target.scheme, target.netloc) == (
-                root.scheme,
-                root.netloc,
-            ):
+            if root.scheme and self.origin(target) == self.origin(root):
                 target_path, root_path = unquote(target.path), unquote(root.path)
                 if target_path.startswith(root_path):
                     path = (self.root / target_path[len(root_path) :]).resolve()
@@ -116,13 +122,15 @@ class Runner:
                 if value.get("type") not in ("Catalog", "Collection", "Feature"):
                     raise ValueError("Expected type Catalog, Collection, or Feature")
                 links = value.get("links", [])
-                if not isinstance(links, list) or any(
-                    not isinstance(link, dict) or not isinstance(link.get("href"), str)
-                    for link in links
-                ):
-                    raise ValueError(
-                        "links must be an array of objects with string hrefs"
-                    )
+                if not isinstance(links, list):
+                    raise ValueError("links must be an array")
+                valid_links = []
+                for index, link in enumerate(links):
+                    if isinstance(link, dict) and isinstance(link.get("href"), str):
+                        valid_links.append(link)
+                    else:
+                        self.fail(path, f"links[{index}] must be an object with a string href")
+                links = valid_links
                 if path == file:
                     self_href = next(
                         (link["href"] for link in links if link.get("rel") == "self"),
