@@ -244,13 +244,23 @@ class RunnerTests(unittest.TestCase):
 
     def test_invocation_fixed_formats_quoted_path_timeout(self):
         self.runner.extra_args = ["--verbose"]
+        target = self.root / "a b.json"
+        target.write_text("{}")
         with patch.object(validator.subprocess, "run", return_value=result()) as call:
-            self.runner.invoke(self.root / "a b.json", "json")
+            self.runner.invoke(target, "json")
         args, kwargs = call.call_args
         self.assertEqual(args[0][-2:], ["--verbose", str(self.root / "a b.json")])
         self.assertIn("--output-format", args[0])
         self.assertEqual(kwargs["timeout"], 120)
         self.assertTrue(kwargs["capture_output"])
+
+    def test_timeout_scales_with_input_size(self):
+        target = self.root / "big.ndjson"
+        self.runner.extra_args = []
+        target.write_bytes(b"x" * (5 * 1024 * 1024))
+        with patch.object(validator.subprocess, "run", return_value=result()) as call:
+            self.runner.invoke(target, "ndjson")
+        self.assertEqual(call.call_args.kwargs["timeout"], 170)
 
     def test_many_items_one_batch_and_temp_cleanup(self):
         docs = [

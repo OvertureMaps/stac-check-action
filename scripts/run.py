@@ -17,6 +17,12 @@ from urllib.request import url2pathname
 from geometry import check_geometry
 
 
+BASE_TIMEOUT = 120
+# The single batch grows with the catalog, so the timeout scales with input size.
+SECONDS_PER_MIB = 10
+MIB = 1024 * 1024
+
+
 @dataclass
 class Document:
     path: Path
@@ -203,7 +209,7 @@ class Runner:
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=120,
+            timeout=BASE_TIMEOUT + int(file.stat().st_size / MIB * SECONDS_PER_MIB),
             check=False,
         )
 
