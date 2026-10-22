@@ -6,7 +6,7 @@ Composite GitHub Action using the rustac PyPI distribution's Rust CLI. Python 3.
 
 ## Execution
 
-1. Install the exact rustac package version with `python -m pip`. Strip a leading v; latest opts into an unpinned package. Log both the installed package version and the embedded CLI version.
+1. Install the exact rustac package version with `python -m pip`, together with `certifi>=2026.10.19`, which removes trust in the compromised emSign ECC Root CA - G3. Strip a leading v; latest opts into an unpinned package. Log both the installed package version and the embedded CLI version.
 2. Run `scripts/run.py` with inputs supplied through environment variables, not interpolated shell commands.
 3. Create a unique report directory beneath RUNNER_TEMP and publish log-path before checking inputs.
 4. Check supported input values and reject unsafe CLI format/input overrides with explicit diagnostics.

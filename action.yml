@@ -78,11 +78,12 @@ runs:
         set -euo pipefail
         echo "Installing validator dependencies and rustac (requested package version: $VERSION)"
         python -m pip install --quiet -r "$ACTION_PATH/requirements.txt"
+        # certifi >= 2026.10.19 drops trust in the compromised emSign ECC Root CA - G3
         if [ "$VERSION" = "latest" ]; then
-          python -m pip install --quiet rustac
+          python -m pip install --quiet rustac "certifi>=2026.10.19"
         else
           VERSION="${VERSION#v}"
-          python -m pip install --quiet "rustac==${VERSION}"
+          python -m pip install --quiet "rustac==${VERSION}" "certifi>=2026.10.19"
         fi
         python -c "from importlib.metadata import version; print('Installed rustac package: ' + version('rustac'))"
         rustac --version
