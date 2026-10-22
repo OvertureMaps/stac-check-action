@@ -85,12 +85,13 @@ runs:
         VERSION: ${{ inputs.stac-check-version }}
       run: |
         set -euo pipefail
+        # certifi >= 2026.10.19 drops trust in the compromised emSign ECC Root CA - G3
         if [ "$VERSION" = "latest" ]; then
-          pip install --quiet stac-check
+          pip install --quiet stac-check "certifi>=2026.10.19"
         else
           # Strip leading 'v' if present (PyPI versions don't use v-prefix)
           VERSION="${VERSION#v}"
-          pip install --quiet "stac-check==${VERSION}"
+          pip install --quiet "stac-check==${VERSION}" "certifi>=2026.10.19"
         fi
 
     - name: Run stac-check
