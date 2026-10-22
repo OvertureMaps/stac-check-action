@@ -41,7 +41,7 @@ Design constraints:
 
 ## Steps
 
-1. Install `stac-check`. If `stac-check-version` is `latest`, run `pip install stac-check`. Otherwise strip a leading `v` and run `pip install stac-check==<version>`. Fails immediately if Python/pip are unavailable.
+1. Install `stac-check`. If `stac-check-version` is `latest`, run `pip install stac-check "certifi>=2026.10.19"`. Otherwise strip a leading `v` and run `pip install stac-check==<version> "certifi>=2026.10.19"`. The certifi floor removes trust in the compromised emSign ECC Root CA - G3. Fails immediately if Python/pip are unavailable.
 
 2. Build CLI arguments. Order:
    - `--recursive` (if enabled)
