@@ -1,119 +1,52 @@
-# SPEC: stac-check-action
+# Specification
 
-Reference specification. For usage and examples see [README.md](./README.md).
+## Scope
 
-## Overview
+Composite GitHub Action using the rustac PyPI distribution's Rust CLI. Python 3.11+, pip, and bash are runner prerequisites; gh is needed only for PR comments. No container, JavaScript runtime, or external action dependencies are required. See [README.md](./README.md) for the input/output contract and [CHANGELOG.md](./CHANGELOG.md) for migration guidance.
 
-Composite GitHub Action that runs `stac-check` (from [stac-utils/stac-check](https://github.com/stac-utils/stac-check)) against local STAC files. Python and pip are assumed pre-installed on the runner; installing them is out of scope.
+## Execution
 
-Design constraints:
+1. Install the exact rustac package version with `python -m pip`, together with `certifi>=2026.10.19`, which removes trust in the compromised emSign ECC Root CA - G3. Strip a leading v; latest opts into an unpinned package. Log both the installed package version and the embedded CLI version.
+2. Run `scripts/run.py` with inputs supplied through environment variables, not interpolated shell commands.
+3. Create a unique report directory beneath RUNNER_TEMP and publish log-path before checking inputs.
+4. Check supported input values and reject unsafe CLI format/input overrides with explicit diagnostics.
+5. Traverse local child/item links breadth-first. Root depth is zero. Canonical paths deduplicate references and break cycles. Read errors and malformed JSON are failures, not skipped objects.
+6. Resolve relative links against their source files. Map HTTP(S) links under the root self-link directory into the local root directory, rejecting encoded traversal outside it. Unmapped remote links are skipped with a warning. Missing mapped files fail; no network fallback occurs.
+7. Optionally check local asset file existence. Remote assets aren't fetched. Unsupported object-store schemes on traversal links fail explicitly.
+8. Check Item coordinate ranges and geometry/bbox consistency against the original JSON. Serialize Items as NDJSON in a temporary file and validate them in one process. Validate Catalogs and Collections individually with up to four concurrent processes. Each invocation uses fixed input/output formats and a 120-second timeout.
+9. Split failing Item batches only when rustac supplies structured object errors or its recognized deserialization error. Other failures stop isolation and fail the run, avoiding repeated requests for shared operational errors. IDs don't identify files uniquely. Temporary batch files are deleted even when rustac fails or times out.
+10. Interpret nonzero process status as a failure. Parse structured CLI errors when available; retain plain diagnostics otherwise. Replace leading instance JSON with a compact marker, and supply filename and parse troubleshooting guidance. Verbose logs retain raw diagnostics.
+11. Publish JSON and Markdown reports and aggregate valid/exit-code outputs, including operational failures. Copy the log to output-file when requested.
+12. Publish the Markdown summary and optional sticky PR comment before the final step fails validation. Publication steps log success or why there's nothing to publish, including disabled options and absent reports. The final step logs success or failure explicitly. Installation failures have no runner reports.
 
-- Composite action only. No container, no JavaScript runtime, no external action dependencies.
-- Action versions pin to immutable SHA tags. The `stac-check` version is user-specified for supply-chain control.
-- Runner-native tools only: Python, pip, bash, gh.
+## Reports
 
-## Inputs
+JSON contains backend, valid, objects, items, collections, catalogs, errors, skipped_remote, checked_assets, cli_calls, and seconds. Objects counts discovered JSON objects, not a guarantee that every object was validated if an operational error interrupts the run. Errors contain file and message strings. Remote counts represent references, not unique URLs.
 
-| Name | Required | Default | Description |
-|------|----------|---------|-------------|
-| `stac-check-version` | Yes | | `stac-check` PyPI version (e.g. `1.9.1` or `v1.9.1`; leading `v` stripped) or `latest`. |
-| `file` | Yes | | Path to local STAC file to validate. |
-| `recursive` | No | `false` | Recursively validate related local STAC objects (`--recursive`). |
-| `max-depth` | No | `""` | Maximum recursion depth (`--max-depth`); ignored if `recursive` is false. |
-| `validate-assets` | No | `false` | Validate assets locally (`--assets --no-assets-urls`). |
-| `pydantic` | No | `false` | Use stac-pydantic (`--pydantic`). |
-| `verbose` | No | `false` | Verbose error messages (`--verbose`). |
-| `fast` | No | `false` | Fast validation, no geometry/linting (`--fast`). |
-| `fast-linting` | No | `false` | Fast validation with linting, no geometry (`--fast-linting`). |
-| `output-file` | No | `""` | Save CLI output to file (`--output`); requires `recursive: true`. |
-| `config` | No | `""` | Path to config file or inline YAML; sets `STAC_CHECK_CONFIG`. |
-| `extra-args` | No | `""` | Additional CLI arguments, appended last. |
-| `job-summary` | No | `true` | Write results to GitHub job summary. |
-| `comment-pr` | No | `false` | Post results as PR comment; requires `pull-requests: write`. |
+Markdown includes counts, elapsed time, validation scope, skipped remote references, checked local assets, and at most 50 errors. A text budget keeps the summary within GitHub's PR comment limit. Messages in Markdown and annotations are capped at 2,000 characters; the JSON report and log contain all collected errors. Filenames and errors are escaped for their destination, so catalog content can't create workflow commands or HTML.
 
-## Outputs
+The wrapper returns zero after publishing an unsuccessful result. The composite's final step fails on a nonzero aggregate exit-code or valid=false. Unexpected runner termination or absent outputs also fails the action.
 
-| Name | Description |
-|------|-------------|
-| `valid` | Authoritative validation result. `true` if no failure markers found in output, else `false`. |
-| `exit-code` | Raw `stac-check` CLI exit code. Not authoritative in recursive mode (upstream often returns 0 on failures); prefer `valid`. |
-| `log-path` | Path to captured `stac-check` stdout/stderr. Created before input validation runs, so available on every invocation including early-exit errors. |
+## Validation boundaries
 
-## Steps
+The upstream Rust validator owns core and declared extension schema checks. No local STAC schemas, lint rules, best-practice rules, or geometric topology checks are implemented here. Rustac validates deserialized values, which can normalize optional/default fields; this isn't strict raw-JSON schema validation.
 
-1. Install `stac-check`. If `stac-check-version` is `latest`, run `pip install stac-check "certifi>=2026.10.19"`. Otherwise strip a leading `v` and run `pip install stac-check==<version> "certifi>=2026.10.19"`. The certifi floor removes trust in the compromised emSign ECC Root CA - G3. Fails immediately if Python/pip are unavailable.
+Item geometry checks use [GeoJSON's coordinate and bbox model](https://www.rfc-editor.org/rfc/rfc7946.html#section-5): "The axes order of a bbox follows the axes order of geometries." Shapely parses the geometry, extracts coordinates, and computes component bounds without repair. All seven geometry types, including nested GeometryCollections, are supported. Coordinates must be finite numbers with longitude in [-180, 180] and latitude in [-90, 90]. Two- and three-dimensional positions are supported; mixed dimensions fail explicitly. Elevation isn't subject to a geographic range restriction. Schema validation remains responsible for structural requirements that Shapely's parser accepts permissively.
 
-2. Build CLI arguments. Order:
-   - `--recursive` (if enabled)
-   - `--max-depth N` (if set and recursive enabled)
-   - `--assets` (if `validate-assets`; local-only via `--no-assets-urls`)
-   - `--pydantic` (if enabled)
-   - `--verbose` (if enabled)
-   - `--fast` or `--fast-linting` (mutually exclusive; `--fast` wins)
-   - `--output FILE` (if `output-file` is set)
-   - `extra-args` (raw, word-split)
-   - `file` (positional, last)
+Bbox comparisons require matching coordinate extrema, with absolute tolerances of 5e-7 degrees and 1e-6 meters for elevation; no relative tolerance is used. Southern/northern and lower/upper elevation bounds must be ordered. A geometry without a bbox receives coordinate checks only; a null geometry is left to schema validation. Empty geometries have no calculable bounds and fail when supplied a bbox.
 
-3. Resolve config:
-   - If `config` is an existing filepath: set `STAC_CHECK_CONFIG=/path/to/file`.
-   - Else if value contains no `:` and no newline: error out. The value cannot be valid YAML and is treated as a missing path (typo guard).
-   - Otherwise treat as inline YAML, write to a unique file under `$RUNNER_TEMP`, and set `STAC_CHECK_CONFIG` to that path.
-   - If empty: no action.
+Longitude matching accepts an ordinary min/max envelope, including valid envelopes wider than 180 degrees and world bounds. Wrapped bboxes (west > east) must contain each whole connected component in one of their longitude intervals and match the outer component extrema. GeoJSON segments interpolate longitude directly; a segment between 170 and -170 isn't silently interpreted as crossing the antimeridian. Cut geometries can use a wrapped envelope or their ordinary coordinate envelope. Polygon holes contribute elevation extrema. Ring validity, self-intersections, winding, spherical/geodesic bounds, coordinate-order guessing, and Collection extent aggregation aren't checked.
 
-4. Run `stac-check`:
-   - Inputs are passed to the script via `env:` (no shell interpolation of `${{ }}` in `run:` bodies).
-   - Args are built as a bash array and quoted on expansion.
-   - Output is captured to a unique file under `$RUNNER_TEMP` exposed as `log-path`.
-   - `exit-code` is set to the raw stac-check exit code.
-   - `valid` is set to `false` if the output contains failure markers (see [Failure behavior](#failure-behavior)).
+Core schemas are bundled for supported STAC versions. Extension schemas and referenced resources can require network requests. The Items batch shares a validator cache; independent container invocations don't. Repeated failure isolation can cost more subprocesses and schema downloads than a passing run.
 
-5. Job summary (if `job-summary: true`): the "Validation Summary" section (or full output if absent) is appended to `$GITHUB_STEP_SUMMARY` inside a fenced code block.
+Remote targets outside the local mapping aren't checked, and a passing local report doesn't imply they are valid. Schema retrieval errors, subprocess timeouts, missing files, and malformed inputs fail explicitly.
 
-6. PR comment (if `comment-pr: true` and event is `pull_request`): posted via `gh pr comment` with `GH_TOKEN: ${{ github.token }}`. Sticky via a hidden HTML marker; existing comments are updated rather than stacked. Comment lookup paginates to handle busy PRs.
+Link-resolution errors don't stop traversal of sibling links. Container subprocess failures are recorded per file without discarding other container results. An operational Item-batch failure stops the run with an explicit incomplete-validation error.
 
-7. Fail step on validation failure (see [Failure behavior](#failure-behavior)).
+## CI
 
-## Permissions
+Unit tests exercise traversal, aliases/cycles/depth, malformed input, assets, CLI contracts, batching and failure isolation, escaping, invalid inputs, operational failures, logs, and reports. Branch measurement is enabled with a minimum combined coverage of 95%.
 
-Default minimal. Required additions:
+Real-CLI integration tests cover a large local catalog, invalid structures, duplicate IDs, and extension schema rejection. Tests run on Linux with Python 3.11, 3.12, and 3.14, plus Windows with Python 3.12. A composite-action job checks summaries and outputs for passing and failing inputs. All remote action references are SHA-pinned; self references use GitHub's secure `$/` syntax.
 
-| Feature | Permission |
-|---------|------------|
-| `comment-pr: true` | `pull-requests: write` |
-
-## Failure behavior
-
-The action fails the step in either case:
-
-1. `stac-check` returned a non-zero exit code (re-raised verbatim).
-2. `stac-check` returned 0 but the captured output contained failure markers:
-   - `Recursive validation has failed!`
-   - `Failed: N/M` with `N >= 1`
-   - `Passed: False`
-   - `Valid: False`
-
-Marker parsing compensates for upstream recursive-mode behavior, where exit codes do not reliably reflect failures.
-
-Use `continue-on-error: true` if you want failures to surface as outputs (`exit-code`, `valid`) without blocking the workflow.
-
-## Security considerations
-
-- No external action dependencies.
-- All user inputs flow through `env:` blocks; no `${{ }}` interpolation in `run:` bodies. Mitigates shell injection.
-- `extra-args` is word-split unquoted. Callers are responsible for safe content. This is the documented escape hatch.
-- `latest` is allowed for `stac-check-version` but discouraged in production. Pin an exact version.
-- Default permissions are minimal. `pull-requests: write` is only needed for `comment-pr: true`.
-- No secret handling, no privilege escalation, no network access required for validation.
-
-## Release process
-
-1. Tag commits with semantic versions (e.g. `v1.0.0`) pointing to fixed SHAs. Release ruleset enforces tag immutability.
-2. Document supported `stac-check` versions in `README.md`.
-
-## Assumptions
-
-- Runner has Python 3.10+ and pip.
-- `stac-check` version exists on PyPI and supports Python 3.10+.
-- `GITHUB_STEP_SUMMARY` is available (default on GitHub-hosted runners).
-- `comment-pr` workflows have `pull-requests: write` and run on `pull_request` events.
-- STAC files are local (checked out via `actions/checkout` or generated in workflow).
+A separate required composite-action job installs the published overture-stac 4.0.0 crate and generates a catalog against the public data bucket in sample mode, covering one Item per Collection across available releases. The installed binary is cached by generator version, runner OS, and architecture before catalog generation; cache hits skip compilation. It verifies that every generated JSON object is discovered and that validation and report publication succeed. This job depends on public data and schema availability; the installed generator version is logged.

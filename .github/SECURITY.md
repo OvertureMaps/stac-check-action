@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the latest released version on the current major receives security updates. Older majors and older patch releases within the current major do not receive backports. Pin to a SHA in production (see [README](./README.md#pinning)).
+Only the latest released version on the current major receives security updates. Older majors and older patch releases within the current major do not receive backports. Pin to a SHA in production (see [README](../README.md#permissions-and-pinning)).
 
 | Version | Supported |
 |---------|-----------|
@@ -14,7 +14,7 @@ Only the latest released version on the current major receives security updates.
 
 Do not open a public issue for security vulnerabilities.
 
-Use GitHub's [private vulnerability reporting](https://github.com/lowlydba/stac-check-action/security/advisories/new). Acknowledgement target: 72 hours.
+Use GitHub's [private vulnerability reporting](https://github.com/OvertureMaps/stac-check-action/security/advisories/new). Acknowledgement target: 72 hours.
 
 Include:
 
@@ -25,7 +25,7 @@ Include:
 
 ## Scope
 
-This action is a thin composite wrapper around the upstream [`stac-check`](https://github.com/stac-utils/stac-check) CLI. Vulnerabilities in `stac-check` itself should be reported to the [stac-utils](https://github.com/stac-utils/stac-check/security) project.
+This action is a composite wrapper around the upstream [rustac](https://github.com/stac-utils/rustac) CLI. Vulnerabilities in that validator should be reported to [stac-utils/rustac](https://github.com/stac-utils/rustac/security). Catalog extension declarations can cause schema HTTP requests; only run validation on inputs appropriate for the runner's network access.
 
 In scope here:
 
