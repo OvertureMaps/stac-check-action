@@ -13,13 +13,18 @@ concurrency:
 
 jobs:
   test:
-    name: Test Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: Test ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     permissions:
       contents: read
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.11', '3.12', '3.14']
+        os: [ubuntu-latest]
+        include:
+          - os: windows-latest
+            python-version: '3.12'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -32,27 +37,19 @@ jobs:
           # pip >= 26.2.2 drops trust in the compromised emSign ECC Root CA - G3
           pip-version: '26.2.2'
 
-      - name: Install stac-check
-        run: pip install stac-check==1.9.1
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-test.txt rustac==0.9.17
 
-      - name: Create test STAC item
-        run: |
-          cat > "${RUNNER_TEMP}/test-item.json" << 'EOF'
-          {
-            "type": "Feature",
-            "stac_version": "1.0.0",
-            "stac_extensions": [],
-            "id": "test-item",
-            "geometry": {"type": "Point", "coordinates": [0, 0]},
-            "bbox": [0, 0, 0, 0],
-            "properties": {"datetime": "2024-01-01T00:00:00Z"},
-            "links": [{"rel": "self", "href": "test-item.json"}],
-            "assets": {}
-          }
-          EOF
+      - name: Unit tests
+        run: python -m coverage run --branch --source=scripts -m unittest discover -s tests -p "test_*.py"
 
-      - name: Run stac-check
-        run: stac-check "${RUNNER_TEMP}/test-item.json"
+      - name: Enforce coverage
+        run: python -m coverage report --fail-under=95 --show-missing
+
+      - name: Real rustac integration tests
+        env:
+          RUN_INTEGRATION: '1'
+        run: python -m unittest discover -s tests -p test_integration.py -v
 
   lint:
     name: Lint
@@ -66,6 +63,7 @@ jobs:
 
       - name: Validate action.yml
         run: |
+          python3 -m pip install -r requirements-test.txt
           python3 -c "
           import yaml
           with open('action.yml') as f:
@@ -94,14 +92,14 @@ jobs:
           persona: pedantic
 
   e2e:
-    name: E2E Test with Overture STAC (positive)
+    name: Composite action reports and failure handling
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: stac-check-action
           persist-credentials: false
 
       - name: Set up Python
@@ -109,45 +107,35 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-
-      - name: Clone and setup overturemaps/stac
-        run: |
-          git clone --depth 1 https://github.com/OvertureMaps/stac.git "${RUNNER_TEMP}/overture-stac"
-          cd "${RUNNER_TEMP}/overture-stac"
-          uv sync
-
-      - name: Generate STAC catalog
-        run: |
-          cd "${RUNNER_TEMP}/overture-stac"
-          uv run gen-stac --output "${RUNNER_TEMP}/stac-catalog" --debug
+      - name: Generate deterministic catalog
+        run: python tests/generate_catalog.py "${RUNNER_TEMP}/stac-catalog"
 
       - name: Run stac-check-action (self)
         uses: $/
         id: e2e
         with:
-          stac-check-version: 1.9.1
           file: ${{ runner.temp }}/stac-catalog/catalog.json
           recursive: true
           validate-assets: true
 
-      - name: Verify stac-check passed cleanly
+      - name: Verify complete catalog and reports
         shell: bash
         env:
           E2E_OUTCOME: ${{ steps.e2e.outcome }}
           E2E_VALID: ${{ steps.e2e.outputs.valid }}
           E2E_EXIT_CODE: ${{ steps.e2e.outputs.exit-code }}
           E2E_OUTPUT_PATH: ${{ steps.e2e.outputs.log-path }}
+          E2E_REPORT_PATH: ${{ steps.e2e.outputs.report-path }}
+          E2E_SUMMARY_PATH: ${{ steps.e2e.outputs.summary-path }}
         run: |
           set -uo pipefail
           FAIL=0
           if [ "${E2E_OUTCOME}" != "success" ]; then
-            echo "::error::E2E action step outcome was '${E2E_OUTCOME}', expected 'success' (Overture STAC should be conforming)"
+            echo "::error::E2E action step outcome was '${E2E_OUTCOME}', expected 'success'"
             FAIL=1
           fi
           if [ "${E2E_VALID}" != "true" ]; then
-            echo "::error::E2E valid output was '${E2E_VALID}', expected 'true' (overture STAC is conforming)"
+            echo "::error::E2E valid output was '${E2E_VALID}', expected 'true'"
             FAIL=1
           fi
           if [ "${E2E_EXIT_CODE}" != "0" ]; then
@@ -155,16 +143,46 @@ jobs:
             FAIL=1
           fi
           if [ "$FAIL" -ne 0 ]; then
-            echo "::group::stac-check output"
+            echo "::group::Validation output"
             [ -f "${E2E_OUTPUT_PATH}" ] && cat "${E2E_OUTPUT_PATH}" || echo "(output file missing)"
             echo "::endgroup::"
             exit 1
           fi
           echo "E2E confirmed conforming STAC (outcome=success, valid=true, exit-code=0)"
+          python -c '
+          import json, os
+          from pathlib import Path
+          r = json.loads(Path(os.environ["E2E_REPORT_PATH"]).read_text())
+          assert r["valid"] and r["items"] == 1000 and r["objects"] == 1002, r
+          assert r["skipped_remote"] == 0 and r["cli_calls"] == 3, r
+          assert "Passed" in Path(os.environ["E2E_SUMMARY_PATH"]).read_text()
+          '
 
-  bats:
-    name: BATS Unit Tests
+      - name: Invalid object fails but publishes results
+        id: invalid
+        continue-on-error: true
+        uses: $/
+        with:
+          file: ${{ runner.temp }}/stac-catalog/invalid.json
+
+      - name: Verify failure outputs
+        env:
+          OUTCOME: ${{ steps.invalid.outcome }}
+          VALID: ${{ steps.invalid.outputs.valid }}
+          CODE: ${{ steps.invalid.outputs.exit-code }}
+          SUMMARY: ${{ steps.invalid.outputs.summary-path }}
+        run: |
+          test "$OUTCOME" = failure
+          test "$VALID" = false
+          test "$CODE" = 1
+          grep -q 'invalid.json' "$SUMMARY"
+
+  overture-e2e:
+    name: Released Overture generator against public data
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OVERTURE_STAC_VERSION: '4.0.0'
     permissions:
       contents: read
     steps:
@@ -172,14 +190,96 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run BATS tests
-        run: npx -y bats@1.13.0 tests/
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Restore Overture generator binary
+        id: overture-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/overture-tools/bin
+          key: overture-stac-${{ env.OVERTURE_STAC_VERSION }}-${{ runner.os }}-${{ runner.arch }}-v1
+
+      - name: Install Overture generator
+        shell: bash
+        env:
+          CACHE_HIT: ${{ steps.overture-cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          if [ "$CACHE_HIT" = "true" ]; then
+            echo "Using cached Overture generator binary."
+          else
+            echo "Compiling published overture-stac ${OVERTURE_STAC_VERSION} (cold binary cache)."
+            cargo install --locked overture-stac --version "$OVERTURE_STAC_VERSION" --root "${RUNNER_TEMP}/overture-tools"
+          fi
+          "${RUNNER_TEMP}/overture-tools/bin/overture-stac" --version
+
+      - name: Cache installed Overture generator binary
+        if: steps.overture-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/overture-tools/bin
+          key: ${{ steps.overture-cache.outputs.cache-primary-key }}
+
+      - name: Generate Overture catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/overture-tools/bin/overture-stac" build \
+            --debug --output "${RUNNER_TEMP}/overture-catalog"
+
+      # overture-stac output has longitudes slightly past ±180; the next step allows only those errors.
+      - name: Validate generated Overture catalog
+        id: overture
+        continue-on-error: true
+        uses: $/
+        with:
+          file: ${{ runner.temp }}/overture-catalog/catalog.json
+          recursive: true
+          validate-assets: true
+
+      - name: Verify complete local traversal and reports
+        shell: bash
+        env:
+          VALID: ${{ steps.overture.outputs.valid }}
+          CODE: ${{ steps.overture.outputs.exit-code }}
+          REPORT: ${{ steps.overture.outputs.report-path }}
+          SUMMARY: ${{ steps.overture.outputs.summary-path }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "overture-catalog"
+          documents = [json.loads(path.read_text()) for path in root.rglob("*.json")]
+          report = json.loads(Path(os.environ["REPORT"]).read_text())
+          known = re.compile(
+              r"geometry: position \d+ longitude (-?180\.\d+) is outside \[-180, 180\]"
+          )
+          for error in report["errors"]:
+              match = known.fullmatch(error["message"])
+              assert match and abs(float(match[1])) - 180 < 1e-3, error
+          expected_valid = not report["errors"]
+          assert report["valid"] == expected_valid, report
+          assert os.environ["VALID"] == str(expected_valid).lower(), os.environ["VALID"]
+          assert os.environ["CODE"] == ("0" if expected_valid else "1"), os.environ["CODE"]
+          assert report["objects"] == len(documents), report
+          assert report["items"] == sum(doc.get("type") == "Feature" for doc in documents), report
+          assert report["items"] > 0 and report["collections"] > 0 and report["catalogs"] > 0, report
+          result = "Passed" if expected_valid else "Failed"
+          assert f"**Result: {result}**" in Path(os.environ["SUMMARY"]).read_text()
+          PY
 
   rollup-tests:
     name: Test Rollup
     runs-on: ubuntu-latest
     permissions: {}
-    needs: [test, lint, lint-actions, e2e, bats]
+    needs: [test, lint, lint-actions, e2e, overture-e2e]
     if: always()
     steps:
       - uses: lowlydba/are-we-good@6b10e5f2697555fbaf7f8f37ce38d4454c954a4c # v1.2.2

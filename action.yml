@@ -1,14 +1,14 @@
 name: 'stac-check-action'
-description: 'Run stac-check on local STAC files'
+description: 'Validate local STAC catalogs with rustac'
 author: 'lowlydba'
 branding:
   icon: 'globe'
   color: 'green'
 
 inputs:
-  stac-check-version:
-    description: 'stac-check PyPI version (e.g., 1.9.1 or v1.9.1; leading "v" stripped) or "latest"'
-    required: true
+  rustac-version:
+    description: 'rustac PyPI package version, not the embedded CLI version'
+    default: '0.9.17'
   file:
     description: 'Path to local STAC file to validate'
     required: true
@@ -17,31 +17,19 @@ inputs:
     required: false
     default: 'false'
   max-depth:
-    description: 'Maximum recursion depth (requires recursive: true)'
+    description: 'Maximum traversal depth, with root at zero (requires recursive: true)'
     required: false
     default: ''
   validate-assets:
     description: 'Validate assets locally (no network requests)'
     required: false
     default: 'false'
-  pydantic:
-    description: 'Use stac-pydantic for enhanced validation'
-    required: false
-    default: 'false'
   verbose:
     description: 'Show verbose error messages'
     required: false
     default: 'false'
-  fast:
-    description: 'Fast validation with FastJSONSchema, no geometry/linting'
-    required: false
-    default: 'false'
-  fast-linting:
-    description: 'Fast validation with linting, no geometry checks'
-    required: false
-    default: 'false'
   output-file:
-    description: 'Save CLI output to file (requires recursive: true per stac-check CLI)'
+    description: 'Save validation log to file'
     required: false
     default: ''
   job-summary:
@@ -53,48 +41,54 @@ inputs:
     required: false
     default: 'false'
   extra-args:
-    description: 'Additional stac-check CLI arguments (appended last)'
-    required: false
-    default: ''
-  config:
-    description: 'Path to config file or inline YAML (sets STAC_CHECK_CONFIG env var)'
+    description: 'Additional rustac verbosity flags only: --verbose/-v and --quiet/-q'
     required: false
     default: ''
   stream-output:
-    description: 'Stream stac-check output to the Actions log as it runs, instead of only after it exits'
+    description: 'Stream wrapper progress and errors as validation runs'
     required: false
     default: 'true'
 
 outputs:
   exit-code:
-    description: 'Raw stac-check CLI exit code. Note: not authoritative for recursive validation — check `valid` instead, since stac-check often returns 0 even when recursive validation fails.'
+    description: 'Aggregate validation status: 0 for success, 1 for validation or operational errors'
     value: ${{ steps.run.outputs.exit-code }}
   log-path:
-    description: 'Path to captured stac-check stdout/stderr. Set on every successful invocation of the runner (created before input validation, so available even on early-exit errors).'
+    description: 'Validation log path, including early input errors. verbose includes raw rustac diagnostics.'
     value: ${{ steps.run.outputs.log-path }}
   valid:
-    description: 'Authoritative validation result: `true` if no failure markers were found in the stac-check output, `false` otherwise.'
+    description: 'Authoritative result for the objects checked; remote targets outside the local catalog are skipped with a warning.'
     value: ${{ steps.run.outputs.valid }}
+  report-path:
+    description: 'JSON report with counts and file-attributed errors'
+    value: ${{ steps.run.outputs.report-path }}
+  summary-path:
+    description: 'Markdown summary used for the job summary and PR comment'
+    value: ${{ steps.run.outputs.summary-path }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Install stac-check
+    - name: Install validator
       shell: bash
       env:
-        VERSION: ${{ inputs.stac-check-version }}
+        VERSION: ${{ inputs.rustac-version }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
+        echo "Installing validator dependencies and rustac (requested package version: $VERSION)"
+        python -m pip install --quiet -r "$ACTION_PATH/requirements.txt"
         # certifi >= 2026.10.19 drops trust in the compromised emSign ECC Root CA - G3
         if [ "$VERSION" = "latest" ]; then
-          pip install --quiet stac-check "certifi>=2026.10.19"
+          python -m pip install --quiet rustac "certifi>=2026.10.19"
         else
-          # Strip leading 'v' if present (PyPI versions don't use v-prefix)
           VERSION="${VERSION#v}"
-          pip install --quiet "stac-check==${VERSION}" "certifi>=2026.10.19"
+          python -m pip install --quiet "rustac==${VERSION}" "certifi>=2026.10.19"
         fi
+        python -c "from importlib.metadata import version; print('Installed rustac package: ' + version('rustac'))"
+        rustac --version
 
-    - name: Run stac-check
+    - name: Validate STAC
       id: run
       shell: bash
       env:
@@ -102,72 +96,75 @@ runs:
         IN_RECURSIVE: ${{ inputs.recursive }}
         IN_MAX_DEPTH: ${{ inputs.max-depth }}
         IN_VALIDATE_ASSETS: ${{ inputs.validate-assets }}
-        IN_PYDANTIC: ${{ inputs.pydantic }}
         IN_VERBOSE: ${{ inputs.verbose }}
-        IN_FAST: ${{ inputs.fast }}
-        IN_FAST_LINTING: ${{ inputs.fast-linting }}
         IN_OUTPUT_FILE: ${{ inputs.output-file }}
         IN_EXTRA_ARGS: ${{ inputs.extra-args }}
-        IN_CONFIG: ${{ inputs.config }}
         IN_STREAM_OUTPUT: ${{ inputs.stream-output }}
         ACTION_PATH: ${{ github.action_path }}
-      run: bash "$ACTION_PATH/scripts/run.sh"
+      run: python "$ACTION_PATH/scripts/run.py"
 
     - name: Write to job summary
-      if: ${{ always() && inputs.job-summary == 'true' && steps.run.outputs.log-path != '' }}
+      if: always()
       shell: bash
       env:
-        OUTPUT_PATH: ${{ steps.run.outputs.log-path }}
+        SUMMARY_PATH: ${{ steps.run.outputs.summary-path }}
+        ENABLED: ${{ inputs.job-summary }}
       run: |
         set -euo pipefail
-        {
-          echo "## stac-check Results"
-          echo ""
-          echo '```'
-          if grep -q "Validation Summary" "$OUTPUT_PATH" 2>/dev/null; then
-            sed -n '/Validation Summary/,$p' "$OUTPUT_PATH"
-          else
-            cat "$OUTPUT_PATH"
-          fi
-          echo '```'
-        } >> "$GITHUB_STEP_SUMMARY"
+        if [ "$ENABLED" != "true" ]; then
+          echo "Job summary disabled; nothing to publish."
+          exit 0
+        fi
+        if [ -z "$SUMMARY_PATH" ]; then
+          echo "No validation summary was produced; nothing to publish."
+          exit 0
+        fi
+        cat "$SUMMARY_PATH" >> "$GITHUB_STEP_SUMMARY"
+        echo "Published validation report to the job summary."
 
     - name: Post PR comment
-      if: ${{ always() && inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.run.outputs.log-path != '' }}
+      if: always()
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        OUTPUT_PATH: ${{ steps.run.outputs.log-path }}
+        SUMMARY_PATH: ${{ steps.run.outputs.summary-path }}
         PR_NUMBER: ${{ github.event.number }}
         REPO: ${{ github.repository }}
+        ENABLED: ${{ inputs.comment-pr }}
+        EVENT_NAME: ${{ github.event_name }}
       run: |
         set -euo pipefail
+        if [ "$ENABLED" != "true" ]; then
+          echo "PR comments disabled; nothing to publish."
+          exit 0
+        fi
+        if [ "$EVENT_NAME" != "pull_request" ]; then
+          echo "Not a pull_request event; no PR comment to publish."
+          exit 0
+        fi
+        if [ -z "$SUMMARY_PATH" ]; then
+          echo "No validation summary was produced; no PR comment to publish."
+          exit 0
+        fi
         MARKER="<!-- stac-check-action -->"
         BODY_PATH="$RUNNER_TEMP/stac-check-comment.md"
         {
           echo "$MARKER"
-          echo "## stac-check Results"
-          echo ""
-          echo '```'
-          if grep -q "Validation Summary" "$OUTPUT_PATH" 2>/dev/null; then
-            sed -n '/Validation Summary/,$p' "$OUTPUT_PATH"
-          else
-            cat "$OUTPUT_PATH"
-          fi
-          echo '```'
+          cat "$SUMMARY_PATH"
         } > "$BODY_PATH"
 
-        # Find existing comment with marker (paginate to handle busy PRs)
-        COMMENT_ID=$(gh api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-          --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -n1)
+        COMMENT_ID=$(gh api --paginate --slurp "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+          --jq "[.[][] | select((.body // \"\") | startswith(\"$MARKER\"))][0].id // empty")
 
         if [ -n "$COMMENT_ID" ]; then
-          # Stream body via stdin to avoid ARG_MAX limits on large outputs
+          echo "Updating existing validation PR comment."
           gh api --method PATCH "repos/${REPO}/issues/comments/${COMMENT_ID}" \
             --field "body=@${BODY_PATH}"
         else
+          echo "Creating validation PR comment."
           gh pr comment "$PR_NUMBER" --body-file "$BODY_PATH"
         fi
+        echo "Published validation PR comment."
 
     - name: Fail on issues
       if: always()
@@ -177,24 +174,20 @@ runs:
         VALID: ${{ steps.run.outputs.valid }}
         RUN_OUTCOME: ${{ steps.run.outcome }}
       run: |
-        # If the runner script failed before stac-check executed (input
-        # validation, config parse error, etc), exit-code output is empty.
-        # Surface that as the real error rather than rewriting it as a
-        # phantom 'stac-check exit 1'.
         if [ -z "${EXIT_CODE}" ]; then
           if [ "${RUN_OUTCOME}" = "failure" ]; then
-            echo "::error::stac-check-action runner failed before stac-check executed; see prior step output"
+            echo "::error::STAC validator runner failed; see prior step output"
             exit 1
           fi
-          # Run step succeeded but didn't write exit-code: should not happen.
           echo "::error::internal: run step produced no exit-code output"
           exit 1
         fi
         if [ "${EXIT_CODE}" != "0" ]; then
-          echo "::error::stac-check exited with code: ${EXIT_CODE}"
+          echo "::error::STAC validation exited with code: ${EXIT_CODE}"
           exit "${EXIT_CODE}"
         fi
         if [ "${VALID:-true}" = "false" ]; then
-          echo "::error::stac-check reported validation failures (exit-code was 0 but failure markers found in output)"
+          echo "::error::STAC validation reported failures"
           exit 1
         fi
+        echo "STAC validation passed; no issues found."

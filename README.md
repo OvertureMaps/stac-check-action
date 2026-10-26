@@ -1,136 +1,98 @@
 # stac-check-action
 
 [![CI](https://github.com/OvertureMaps/stac-check-action/actions/workflows/ci.yml/badge.svg)](https://github.com/OvertureMaps/stac-check-action/actions/workflows/ci.yml)
-[![immutable release ruleset](https://img.shields.io/badge/immutable%20tags-active-green?logo=github)](https://github.com/OvertureMaps/stac-check-action/rules)
 
-Composite GitHub Action that runs [`stac-check`](https://github.com/stac-utils/stac-check) against local STAC files. Validates, lints, and checks best practices for items, collections, and catalogs.
+Catch catalog errors before publishing your STAC. Validate Catalogs, Collections, and Items with [rustac](https://github.com/stac-utils/rustac), then check Item coordinate ranges and bounding boxes with Shapely-backed geometry checks.
 
-Properties:
+Built for generated catalogs with thousands of Items: schema validation batches Items into one Rust process, reusing compiled extension schemas. The action checks your build's JSON without downloading the published catalog.
 
-- Composite (no container, no external actions).
-- Runner-native tools only (Python, pip, shell, gh).
-- Local-only by default; no network requests for asset URLs.
-
-## Contents
-
-- [Usage](#usage)
-- [Pinning](#pinning)
-- [Inputs](#inputs)
-- [Outputs](#outputs)
-- [Examples](#examples)
-- [Local-only behavior](#local-only-behavior)
-- [Requirements](#requirements)
-- [Security](#security)
-- [Specification](#specification)
+- ⚡ **Rust-powered schema validation:** core STAC and declared extensions, with no Rust toolchain required on your runner.
+- 📐 **Spatial consistency:** longitude/latitude ranges and geometry/bbox agreement, including elevation and antimeridian-cut geometries.
+- 📋 **Results where you work:** source-file annotations, GitHub step summaries, optional sticky PR comments, and machine-readable JSON reports.
 
 ## Usage
 
-```yaml
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: OvertureMaps/stac-check-action@v1.0.0
-        with:
-          stac-check-version: 1.9.1
-          file: ./stac/item.json
-```
-
-## Pinning
-
-Tags are immutable per this repo's [release ruleset](https://github.com/OvertureMaps/stac-check-action/rules). For supply-chain-sensitive workflows, pin to a commit SHA:
-
-```yaml
-- uses: OvertureMaps/stac-check-action@<full-commit-sha> # v1.0.0
-```
-
-[Dependabot](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/keeping-your-actions-up-to-date-with-dependabot) keeps SHA-pinned actions current.
-
-## Inputs
-
-| Input | Description | Allowed Values | Default |
-|-------|-------------|----------------|---------|
-| `stac-check-version` (required) | Exact version (e.g. `1.9.1`) or `latest` | string | |
-| `file` (required) | Path to local STAC file | string | |
-| `recursive` | Recursively validate related local objects | `'true'` / `'false'` | `'false'` |
-| `max-depth` | Maximum recursion depth (requires `recursive: true`) | integer | |
-| `validate-assets` | Validate local asset paths (no network) | `'true'` / `'false'` | `'false'` |
-| `pydantic` | Use stac-pydantic for validation | `'true'` / `'false'` | `'false'` |
-| `verbose` | Verbose error messages | `'true'` / `'false'` | `'false'` |
-| `fast` | Fast validation, no geometry/linting | `'true'` / `'false'` | `'false'` |
-| `fast-linting` | Fast validation with linting, no geometry | `'true'` / `'false'` | `'false'` |
-| `output-file` | Save CLI output to file (requires `recursive: true`) | string | |
-| `config` | Path to config file or inline YAML (sets `STAC_CHECK_CONFIG`) | string | |
-| `stream-output` | Stream `stac-check` output to the Actions log as it runs | `'true'` / `'false'` | `'true'` |
-| `job-summary` | Write results to job summary | `'true'` / `'false'` | `'true'` |
-| `comment-pr` | Post results as PR comment (requires `pull-requests: write`) | `'true'` / `'false'` | `'false'` |
-| `extra-args` | Extra CLI arguments, appended last | string | |
-
-## Outputs
-
-| Name | Description |
-|------|-------------|
-| `valid` | Authoritative validation result. `true` if no failure markers in stac-check output, else `false`. |
-| `exit-code` | Raw stac-check exit code. Not authoritative in recursive mode (upstream returns `0` even on failures); prefer `valid`. |
-| `log-path` | Path to captured stac-check stdout/stderr. Set on every invocation, including early-exit errors. |
-
-## Examples
-
-PR comment with fast linting and asset validation:
+Use this configuration with the commit SHA of the v2 release once published:
 
 ```yaml
 jobs:
   validate:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
+      contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: OvertureMaps/stac-check-action@v1.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: OvertureMaps/stac-check-action@<full-v2-commit-sha>
         with:
-          stac-check-version: 1.9.1
-          file: ./stac/collection.json
-          fast-linting: true
-          comment-pr: true
-          validate-assets: true
+          rustac-version: '0.9.17'
+          file: ./stac/catalog.json
+          recursive: true
 ```
 
-Inline config:
+The action requires Python 3.11+, pip, and bash. The rustac PyPI package includes the Rust CLI, so runners don't need Cargo or a Rust build. Its package version differs from the embedded CLI version.
 
-```yaml
-- uses: OvertureMaps/stac-check-action@v1.0.0
-  with:
-    stac-check-version: 1.9.1
-    file: ./item.json
-    config: |
-      linting:
-        check_geometry: false
-        bloated_links: true
-      settings:
-        max_links: 10
-```
+## Inputs
 
-## Local-only behavior
+| Input | Default | Behavior |
+|---|---|---|
+| `file` | Required | Local path to a Catalog, Collection, or Item JSON file. |
+| `rustac-version` | `0.9.17` | PyPI package version. A leading `v` is stripped; `latest` is permitted but isn't reproducible. |
+| `recursive` | `false` | Validate linked child catalogs, collections, and items. |
+| `max-depth` | ∞ | Non-negative traversal depth. Root is depth 0; 0 checks only the root. Ignored without recursion. |
+| `validate-assets` | `false` | Check local asset file existence, not content or remote availability. |
+| `verbose` | `false` | Include raw rustac stdout/stderr for failures in the log. |
+| `output-file` | Empty | Copy the validation log to this path. Parent directory must exist. |
+| `stream-output` | `true` | Print wrapper progress and failures as they occur; false prints the captured log at completion. |
+| `job-summary` | `true` | Publish counts, elapsed time, scope, and file-attributed errors to the GitHub step summary. |
+| `comment-pr` | `false` | Publish the same summary as a sticky PR comment. Requires a pull_request event and `pull-requests: write`. |
+| `extra-args` | Empty | Quoted arguments parsed without a shell. Only rustac verbosity flags (`-v`, `--verbose`, `-q`, `--quiet`) are supported. |
 
-By default, validation only touches local files checked out in the workspace. No outbound network requests are made to resolve remote URLs. This keeps runs fast, deterministic, and safe on restricted runners.
+## Outputs and reports
 
-`validate-assets: true` checks local asset paths only; `--no-assets-urls` is enforced. To validate remote URLs, pass `--assets` via `extra-args` to opt in.
+| Output | Meaning |
+|---|---|
+| `valid` | true when all checks on discovered local objects pass. Skipped remote targets aren't validated. |
+| `exit-code` | Aggregate result: 0 for success, 1 for schema, input, filesystem, or CLI errors. It isn't a raw single-process exit code. |
+| `log-path` | UTF-8 validation log, created before input validation. |
+| `summary-path` | Markdown report shared by the step summary and PR comment. |
+| `report-path` | JSON report with counts, timing, and an `errors` array of `{file, message}` objects. |
 
-## Requirements
+Reports remain available after validation failures. Use `continue-on-error: true` when consuming failures as outputs. Installation failures occur before the runner and have no report outputs.
 
-- Runner with Python 3.10+ and pip pre-installed.
-- `stac-check` version published on PyPI and compatible with Python 3.10+.
+Step summaries and PR comments include counts, timing, and errors with source filenames. Full collected errors remain in the log and JSON report when the summary is truncated. Enable verbose for raw rustac diagnostics.
 
-## Security
+## Validation scope
 
-- No external action dependencies.
-- Minimal permissions; `pull-requests: write` only when `comment-pr: true`.
-- No network access required for validation.
-- Pin `stac-check-version` to an exact version in production. `latest` is for non-critical workflows.
+### What gets checked
 
-See [SECURITY.md](./SECURITY.md) for the reporting policy.
+| Check | Coverage |
+|---|---|
+| STAC schemas | Catalog, Collection, and Item core schemas, plus extensions declared in each object's `stac_extensions`. |
+| Coordinate ranges | Finite coordinates; longitude within ±180° and latitude within ±90°. No guessing whether coordinates are swapped. |
+| Item bounding boxes | Geometry/bbox extrema agree in 2D or 3D, including elevation. Absolute tolerances are 5e-7 degrees horizontally and 1e-6 meters vertically. |
+| Geometry types | Point, MultiPoint, LineString, MultiLineString, Polygon, MultiPolygon, and nested GeometryCollections. |
+| Antimeridian bounds | Wrapped bboxes (west > east) must contain whole geometry components and match their bounds. Wide non-crossing geometries and global bounds are also supported. |
+| Catalog traversal | Follow child/item links when recursion is enabled; missing local targets and unreadable JSON fail the run. |
+| Asset references | Optionally check that referenced local asset files exist. |
 
-## Specification
+Spatial checks run on the original Item JSON. Shapely parses geometries and computes bounds without repairing them. Segments use GeoJSON's straight Cartesian interpolation: a LineString from 170° to -170° isn't silently reinterpreted as a short dateline crossing. Use antimeridian-cut components when representing that crossing.
 
-See [SPEC.md](./SPEC.md) for the full technical specification.
+Provide a checked-out or generated JSON catalog. Published URLs within its root self-link directory resolve to the corresponding local files; other remote targets are skipped with a warning. Extension schemas can require network access.
+
+### Boundaries and future work
+
+This validates catalog metadata, not the geospatial assets themselves. It doesn't open COGs or GeoParquet, inspect their CRS, or compare their actual footprints with Item geometry. It also doesn't check remote URL availability, polygon topology (such as self-intersections), ring winding, geodesic bounds, or whether a Collection's extent contains every Item.
+
+Schema checks use rustac's deserialized STAC values, which can normalize optional fields. A passing result therefore isn't a guarantee that the original JSON satisfies every schema constraint without normalization. Geometry/bbox checks establish consistency, not that the footprint describes the right place on Earth.
+
+Best-practice linting is tracked in [OvertureMaps/stac-check-action#17](https://github.com/OvertureMaps/stac-check-action/issues/17), including metadata completeness, identifiers, and filename conventions. Those recommendations aren't checks today. Other capabilities above are outside the current scope, not promised features.
+
+See [validation boundaries](./SPEC.md#validation-boundaries) for the detailed geometry policy.
+
+## Permissions and pinning
+
+Pin this action to a full commit SHA and rustac-version to an exact package version. Released tags are immutable under the repository's [release ruleset](https://github.com/OvertureMaps/stac-check-action/rules). `latest` is suitable only when upstream changes are acceptable.
+
+No extra permissions are needed for local validation beyond those needed to check out your repository. PR comments require `pull-requests: write`; the action doesn't elevate permissions. Use trusted workflows and inputs: JSON Schemas declared by the catalog can trigger outbound requests from rustac.
+
+See [SPEC.md](./SPEC.md) for runner behavior, [CONTRIBUTING.md](./.github/CONTRIBUTING.md) for tests, and [SECURITY.md](./.github/SECURITY.md) for vulnerability reporting.
